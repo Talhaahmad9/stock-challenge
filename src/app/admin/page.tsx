@@ -6,8 +6,6 @@ import { useAuthStore } from "@/store/authStore";
 import { useGameStore } from "@/store/gameStore";
 import useSocket from "@/hooks/useSocket";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 interface EventRow {
   id: string;
   name: string;
@@ -36,7 +34,15 @@ interface TradeLog {
   };
 }
 
-type Tab = "control" | "users" | "monitor";
+type Tab = "control" | "users" | "monitor" | "stocks";
+
+interface AdminStockRow {
+  id: string;
+  symbol: string;
+  name: string;
+  sector: string | null;
+  prices: Array<{ roundNumber: number; price: number }>;
+}
 
 function formatTimer(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -80,6 +86,12 @@ export default function AdminPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
 
+  const [stocks, setStocks] = useState<AdminStockRow[]>([]);
+  const [newStockSymbol, setNewStockSymbol] = useState("");
+  const [newStockName, setNewStockName] = useState("");
+  const [newStockSector, setNewStockSector] = useState("");
+  const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
+
   const { socketRef, isConnected, emit } = useSocket(selectedEventId);
 
   const fetchEvents = useCallback(async () => {
@@ -88,9 +100,7 @@ export default function AdminPage() {
       if (res.ok) {
         const data = (await res.json()) as EventRow[];
         setEvents(data);
-        if (data.length > 0 && !selectedEventId) {
-          setSelectedEventId(data[0].id);
-        }
+        if (data.length > 0 && !selectedEventId) setSelectedEventId(data[0].id);
       }
     } catch {
       /* silent */
@@ -100,10 +110,7 @@ export default function AdminPage() {
   const fetchUsers = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/users");
-      if (res.ok) {
-        const data = (await res.json()) as UserRow[];
-        setUsers(data);
-      }
+      if (res.ok) setUsers((await res.json()) as UserRow[]);
     } catch {
       /* silent */
     }
@@ -113,16 +120,35 @@ export default function AdminPage() {
     async (eventId: string) => {
       try {
         const res = await fetch(`/api/game/state?eventId=${eventId}`);
-        if (res.ok) {
-          const data = (await res.json()) as Parameters<typeof setGameState>[0];
-          setGameState(data);
-        }
+        if (res.ok)
+          setGameState(
+            (await res.json()) as Parameters<typeof setGameState>[0],
+          );
       } catch {
         /* silent */
       }
     },
     [setGameState],
   );
+
+  const fetchStocks = useCallback(async (eventId: string) => {
+    try {
+      const res = await fetch(`/api/admin/stocks?eventId=${eventId}`);
+      if (res.ok) {
+        const data = (await res.json()) as AdminStockRow[];
+        setStocks(data);
+        const inputs: Record<string, string> = {};
+        for (const stock of data) {
+          for (const p of stock.prices) {
+            inputs[`${stock.id}-${p.roundNumber}`] = String(p.price);
+          }
+        }
+        setPriceInputs(inputs);
+      }
+    } catch {
+      /* silent */
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) router.push("/login");
@@ -138,32 +164,33 @@ export default function AdminPage() {
     if (selectedEventId) {
       setActiveEventId(selectedEventId);
       void fetchGameState(selectedEventId);
+      void fetchStocks(selectedEventId);
     }
-  }, [selectedEventId, setActiveEventId, fetchGameState]);
+  }, [selectedEventId, setActiveEventId, fetchGameState, fetchStocks]);
 
-  // FIX: don't put socketRef.current in deps array — use isConnected as
-  // the stable signal that the socket is ready, then register the listener
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket || !isConnected) return;
-
     const handler = (payload: {
       userId: string;
       tradeData: TradeLog["tradeData"];
     }) => {
-      const log: TradeLog = {
-        userId: payload.userId,
-        tradeData: payload.tradeData,
-        timestamp: new Date().toISOString(),
-      };
-      setTradeLogs((prev) => [log, ...prev].slice(0, 20));
+      setTradeLogs((prev) =>
+        [
+          {
+            userId: payload.userId,
+            tradeData: payload.tradeData,
+            timestamp: new Date().toISOString(),
+          },
+          ...prev,
+        ].slice(0, 20),
+      );
     };
-
     socket.on("TRADE_LOG", handler);
     return () => {
       socket.off("TRADE_LOG", handler);
     };
-  }, [isConnected, socketRef]); // isConnected is the stable trigger, not socketRef.current
+  }, [isConnected, socketRef]);
 
   async function sendGameAction(
     action: string,
@@ -179,11 +206,8 @@ export default function AdminPage() {
         body: JSON.stringify({ action, eventId: selectedEventId, ...extra }),
       });
       const data = (await res.json()) as { success?: boolean; error?: string };
-      if (!res.ok || data.error) {
-        setError(data.error ?? "Action failed");
-      } else {
-        await fetchGameState(selectedEventId);
-      }
+      if (!res.ok || data.error) setError(data.error ?? "Action failed");
+      else await fetchGameState(selectedEventId);
     } catch {
       setError("Network error");
     } finally {
@@ -251,6 +275,70 @@ export default function AdminPage() {
     navigator.clipboard.writeText(csv).catch(console.error);
   }
 
+  async function handleCreateStock() {
+    if (!selectedEventId || !newStockSymbol || !newStockName) return;
+    try {
+      await fetch("/api/admin/stocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "CREATE_STOCK",
+          eventId: selectedEventId,
+          symbol: newStockSymbol.toUpperCase(),
+          name: newStockName,
+          sector: newStockSector || null,
+        }),
+      });
+      setNewStockSymbol("");
+      setNewStockName("");
+      setNewStockSector("");
+      await fetchStocks(selectedEventId);
+    } catch {
+      /* silent */
+    }
+  }
+
+  async function handleSetPrice(stockId: string, roundNumber: number) {
+    if (!selectedEventId) return;
+    const key = `${stockId}-${roundNumber}`;
+    const price = parseFloat(priceInputs[key] ?? "");
+    if (isNaN(price)) return;
+    try {
+      await fetch("/api/admin/stocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "SET_PRICE",
+          stockId,
+          roundNumber,
+          price,
+          eventId: selectedEventId,
+        }),
+      });
+      await fetchStocks(selectedEventId);
+    } catch {
+      /* silent */
+    }
+  }
+
+  async function handleDeleteStock(stockId: string) {
+    if (
+      !selectedEventId ||
+      !window.confirm("Delete this stock and all its prices?")
+    )
+      return;
+    try {
+      await fetch("/api/admin/stocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "DELETE_STOCK", stockId }),
+      });
+      await fetchStocks(selectedEventId);
+    } catch {
+      /* silent */
+    }
+  }
+
   const status = gameState?.status ?? "IDLE";
   const currentRound = gameState?.currentRound ?? 0;
   const totalRounds = gameState?.totalRounds ?? 0;
@@ -258,12 +346,12 @@ export default function AdminPage() {
   const TABS: { key: Tab; label: string }[] = [
     { key: "control", label: "CONTROL" },
     { key: "users", label: "USERS" },
+    { key: "stocks", label: "STOCKS" },
     { key: "monitor", label: "MONITOR" },
   ];
 
   return (
     <div className="min-h-screen bg-black font-mono text-green-400">
-      {/* HEADER */}
       <header className="sticky top-0 z-40 bg-black border-b border-green-500/20 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="font-bold tracking-widest text-green-400 text-sm">
@@ -289,18 +377,13 @@ export default function AdminPage() {
         </div>
       </header>
 
-      {/* TAB BAR */}
       <div className="border-b border-green-500/20 px-4">
-        <div className="flex gap-6">
+        <div className="flex gap-6 overflow-x-auto">
           {TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`py-3 text-xs tracking-widest uppercase transition-colors ${
-                activeTab === tab.key
-                  ? "border-b-2 border-green-400 text-green-400"
-                  : "text-green-700 hover:text-green-400"
-              }`}
+              className={`py-3 text-xs tracking-widest uppercase transition-colors whitespace-nowrap ${activeTab === tab.key ? "border-b-2 border-green-400 text-green-400" : "text-green-700 hover:text-green-400"}`}
             >
               {tab.label}
             </button>
@@ -309,7 +392,6 @@ export default function AdminPage() {
       </div>
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-        {/* ── TAB: CONTROL ─────────────────────────────────────────────────── */}
         {activeTab === "control" && (
           <>
             <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-3">
@@ -365,59 +447,49 @@ export default function AdminPage() {
                 Game Controls
               </p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                <button
-                  disabled={status !== "READY" || !!actionLoading}
-                  onClick={() => void sendGameAction("START_GAME")}
-                  className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  {actionLoading === "START_GAME" ? "..." : "START GAME"}
-                </button>
-                <button
-                  disabled={
-                    (status !== "RUNNING" && status !== "ROUND_END") ||
-                    !!actionLoading
-                  }
-                  onClick={() =>
-                    void sendGameAction("START_ROUND", {
-                      roundNumber: currentRound + 1,
-                    })
-                  }
-                  className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  {actionLoading === "START_ROUND" ? "..." : "START ROUND"}
-                </button>
-                <button
-                  disabled={status !== "ROUND_ACTIVE" || !!actionLoading}
-                  onClick={() =>
-                    void sendGameAction("END_ROUND", {
-                      roundNumber: currentRound,
-                      totalRounds,
-                    })
-                  }
-                  className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  {actionLoading === "END_ROUND" ? "..." : "END ROUND"}
-                </button>
-                <button
-                  disabled={status !== "ROUND_ACTIVE" || !!actionLoading}
-                  onClick={() => void sendGameAction("PAUSE")}
-                  className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  {actionLoading === "PAUSE" ? "..." : "PAUSE"}
-                </button>
-                <button
-                  disabled={status !== "PAUSED" || !!actionLoading}
-                  onClick={() => void sendGameAction("RESUME")}
-                  className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  {actionLoading === "RESUME" ? "..." : "RESUME"}
-                </button>
+                {[
+                  {
+                    label: "START GAME",
+                    action: "START_GAME",
+                    disabled: status !== "READY",
+                  },
+                  {
+                    label: "START ROUND",
+                    action: "START_ROUND",
+                    disabled: status !== "RUNNING" && status !== "ROUND_END",
+                    extra: { roundNumber: currentRound + 1 },
+                  },
+                  {
+                    label: "END ROUND",
+                    action: "END_ROUND",
+                    disabled: status !== "ROUND_ACTIVE",
+                    extra: { roundNumber: currentRound, totalRounds },
+                  },
+                  {
+                    label: "PAUSE",
+                    action: "PAUSE",
+                    disabled: status !== "ROUND_ACTIVE",
+                  },
+                  {
+                    label: "RESUME",
+                    action: "RESUME",
+                    disabled: status !== "PAUSED",
+                  },
+                ].map(({ label, action, disabled, extra }) => (
+                  <button
+                    key={action}
+                    disabled={disabled || !!actionLoading}
+                    onClick={() => void sendGameAction(action, extra)}
+                    className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading === action ? "..." : label}
+                  </button>
+                ))}
                 <button
                   disabled={!!actionLoading}
                   onClick={() => {
-                    if (window.confirm("Reset game? This cannot be undone.")) {
+                    if (window.confirm("Reset game? This cannot be undone."))
                       void sendGameAction("RESET");
-                    }
                   }}
                   className="border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
                 >
@@ -463,7 +535,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* ── TAB: USERS ───────────────────────────────────────────────────── */}
         {activeTab === "users" && (
           <>
             <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-4">
@@ -504,7 +575,6 @@ export default function AdminPage() {
               >
                 {isLoading ? "GENERATING..." : "GENERATE"}
               </button>
-
               {generatedUsers.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -608,11 +678,7 @@ export default function AdminPage() {
                                 onClick={() =>
                                   void handleToggleActive(u.id, u.is_active)
                                 }
-                                className={`text-xs px-2 py-1 rounded tracking-widest uppercase ${
-                                  u.is_active
-                                    ? "border border-red-500/50 text-red-400 hover:bg-red-500/10"
-                                    : "border border-green-500/30 text-green-400 hover:bg-green-500/10"
-                                }`}
+                                className={`text-xs px-2 py-1 rounded tracking-widest uppercase ${u.is_active ? "border border-red-500/50 text-red-400 hover:bg-red-500/10" : "border border-green-500/30 text-green-400 hover:bg-green-500/10"}`}
                               >
                                 {u.is_active ? "DISABLE" : "ENABLE"}
                               </button>
@@ -628,7 +694,151 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* ── TAB: MONITOR ─────────────────────────────────────────────────── */}
+        {activeTab === "stocks" && (
+          <>
+            <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-4">
+              <p className="text-xs uppercase tracking-widest text-green-700">
+                Add Stock
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-green-700 uppercase tracking-widest">
+                    Symbol
+                  </label>
+                  <input
+                    type="text"
+                    value={newStockSymbol}
+                    onChange={(e) =>
+                      setNewStockSymbol(e.target.value.toUpperCase())
+                    }
+                    placeholder="AAPL"
+                    maxLength={8}
+                    className="w-full bg-black border border-green-500/30 text-green-300 placeholder-green-900 rounded px-3 py-2 text-sm focus:border-green-400 focus:outline-none uppercase"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-green-700 uppercase tracking-widest">
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newStockName}
+                    onChange={(e) => setNewStockName(e.target.value)}
+                    placeholder="Apple Inc."
+                    className="w-full bg-black border border-green-500/30 text-green-300 placeholder-green-900 rounded px-3 py-2 text-sm focus:border-green-400 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-green-700 uppercase tracking-widest">
+                    Sector
+                  </label>
+                  <input
+                    type="text"
+                    value={newStockSector}
+                    onChange={(e) => setNewStockSector(e.target.value)}
+                    placeholder="Technology"
+                    className="w-full bg-black border border-green-500/30 text-green-300 placeholder-green-900 rounded px-3 py-2 text-sm focus:border-green-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={() => void handleCreateStock()}
+                disabled={!newStockSymbol || !newStockName || !selectedEventId}
+                className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                ADD STOCK
+              </button>
+            </div>
+
+            <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-4">
+              <p className="text-xs uppercase tracking-widest text-green-700">
+                Stock Prices
+              </p>
+              {stocks.length === 0 ? (
+                <p className="text-xs text-green-900 text-center py-6 tracking-widest">
+                  NO STOCKS — ADD STOCKS ABOVE
+                </p>
+              ) : (
+                <div className="space-y-6">
+                  {stocks.map((stock) => (
+                    <div key={stock.id} className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-green-500/10 pb-2">
+                        <div>
+                          <span className="font-bold text-sm text-green-300">
+                            {stock.symbol}
+                          </span>
+                          <span className="text-green-700 text-xs ml-2">
+                            {stock.name}
+                          </span>
+                          {stock.sector && (
+                            <span className="text-green-900 text-xs ml-2">
+                              {stock.sector}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => void handleDeleteStock(stock.id)}
+                          className="border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs px-2 py-1 rounded tracking-widest uppercase"
+                        >
+                          DELETE
+                        </button>
+                      </div>
+                      {totalRounds > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {Array.from(
+                            { length: totalRounds },
+                            (_, i) => i + 1,
+                          ).map((rn) => {
+                            const key = `${stock.id}-${rn}`;
+                            return (
+                              <div
+                                key={rn}
+                                className="flex flex-col items-center gap-1"
+                              >
+                                <span className="text-xs text-green-900 tracking-widest">
+                                  R{rn}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={priceInputs[key] ?? ""}
+                                    onChange={(e) =>
+                                      setPriceInputs((prev) => ({
+                                        ...prev,
+                                        [key]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="0.00"
+                                    className="w-20 bg-black border border-green-500/20 text-green-300 placeholder-green-900 rounded px-2 py-1 text-xs focus:border-green-400 focus:outline-none tabular-nums"
+                                  />
+                                  <button
+                                    onClick={() =>
+                                      void handleSetPrice(stock.id, rn)
+                                    }
+                                    className="border border-green-500/30 text-green-700 hover:text-green-400 hover:border-green-400 text-xs px-2 py-1 rounded uppercase"
+                                  >
+                                    SET
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-green-900 tracking-widest">
+                          Select an event with rounds to set prices.
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
         {activeTab === "monitor" && (
           <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-3">
             <div className="flex items-center justify-between">

@@ -8,8 +8,6 @@ import { usePortfolioStore } from "@/store/portfolioStore";
 import useSocket from "@/hooks/useSocket";
 import type { TradeType } from "@/lib/supabase/database.types";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function formatCurrency(value: number): string {
   return (
     "₨" +
@@ -50,7 +48,6 @@ export default function TradePage() {
     getTotalValue,
     getTotalPnL,
   } = usePortfolioStore();
-
   const { isConnected: socketConnected } = useSocket(activeEventId);
 
   const [tradeModal, setTradeModal] = useState<TradeModal | null>(null);
@@ -62,11 +59,30 @@ export default function TradePage() {
     if (!user) router.push("/login");
   }, [user, router]);
 
+  // Auto-detect active event on mount
   useEffect(() => {
-    if (activeEventId) {
-      fetchPortfolio(activeEventId).catch(console.error);
+    async function detectEvent() {
+      try {
+        const res = await fetch("/api/game/active-event");
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          id: string;
+          starting_balance: number;
+        };
+        useGameStore.getState().setActiveEventId(data.id);
+        usePortfolioStore.getState().setStartingBalance(data.starting_balance);
+        const gsRes = await fetch(`/api/game/state?eventId=${data.id}`);
+        if (gsRes.ok) {
+          const gs = await gsRes.json();
+          useGameStore.getState().setGameState(gs);
+        }
+        await usePortfolioStore.getState().fetchPortfolio(data.id);
+      } catch (err) {
+        console.error("Failed to detect active event:", err);
+      }
     }
-  }, [activeEventId, fetchPortfolio]);
+    if (user) void detectEvent();
+  }, [user]);
 
   function openModal(
     stockId: string,
@@ -92,10 +108,8 @@ export default function TradePage() {
       setTradeError("Enter a valid quantity");
       return;
     }
-
     setTradeLoading(true);
     setTradeError("");
-
     try {
       const res = await fetch("/api/participant/trade", {
         method: "POST",
@@ -121,16 +135,12 @@ export default function TradePage() {
     }
   }
 
-  // FIX: match by stock_id (h.id is the holding row ID, not the stock ID)
-  // HoldingWithStock extends StockWithPrice which has stock id as 'id'
-  // so h.id IS the stock id — but we must confirm this matches stock.id
   function getHolding(stockId: string) {
     return holdings.find((h) => h.id === stockId) ?? null;
   }
 
   const status = gameState?.status;
 
-  // ── Waiting screen ──────────────────────────────────────────────────────────
   if (
     !activeEventId ||
     !gameState ||
@@ -148,12 +158,16 @@ export default function TradePage() {
           <p className="text-xs text-green-700 tracking-widest uppercase">
             Stand by — competition will begin shortly
           </p>
+          {user && (
+            <p className="text-xs text-green-900 tracking-widest">
+              Logged in as {user.username}
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
-  // ── Game end screen ─────────────────────────────────────────────────────────
   if (status === "GAME_END") {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center font-mono">
@@ -170,6 +184,9 @@ export default function TradePage() {
           >
             {formatCurrency(getTotalValue())}
           </p>
+          <p className="text-xs text-green-700 tracking-widest">
+            Thank you for participating
+          </p>
         </div>
       </div>
     );
@@ -183,7 +200,6 @@ export default function TradePage() {
 
   return (
     <div className="min-h-screen bg-black font-mono text-green-400">
-      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 bg-black border-b border-green-500/20 px-4 py-3 flex items-center justify-between">
         <span className="font-bold tracking-widest text-green-400 text-sm">
           STOCK CHALLENGE
@@ -204,7 +220,7 @@ export default function TradePage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        {/* ── STATS BAR ────────────────────────────────────────────────────── */}
+        {/* STATS BAR */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4">
             <p className="text-xs uppercase tracking-widest text-green-700 mb-1">
@@ -239,7 +255,7 @@ export default function TradePage() {
           </div>
         </div>
 
-        {/* ── TIMER ────────────────────────────────────────────────────────── */}
+        {/* TIMER */}
         {timerActive && (
           <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 flex items-center gap-4">
             <span
@@ -269,9 +285,9 @@ export default function TradePage() {
           </div>
         )}
 
-        {/* ── MARKET + HOLDINGS ────────────────────────────────────────────── */}
+        {/* MARKET + HOLDINGS */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* LEFT — MARKET */}
+          {/* MARKET */}
           <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-4">
             <h2 className="text-xs uppercase tracking-widest text-green-400 font-bold pb-1 border-b border-green-500/20">
               Market
@@ -319,7 +335,6 @@ export default function TradePage() {
                       >
                         BUY
                       </button>
-                      {/* FIX: disabled when no holding (quantity 0 rows are deleted) */}
                       <button
                         onClick={() =>
                           openModal(
@@ -341,7 +356,7 @@ export default function TradePage() {
             </div>
           </div>
 
-          {/* RIGHT — HOLDINGS */}
+          {/* HOLDINGS */}
           <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-4">
             <h2 className="text-xs uppercase tracking-widest text-green-400 font-bold pb-1 border-b border-green-500/20">
               Holdings
@@ -384,7 +399,7 @@ export default function TradePage() {
         </div>
       </main>
 
-      {/* ── TRADE MODAL ──────────────────────────────────────────────────────── */}
+      {/* TRADE MODAL */}
       {tradeModal?.open && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center px-4">
           <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-6 w-full max-w-sm space-y-5">
