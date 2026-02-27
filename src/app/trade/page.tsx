@@ -37,7 +37,7 @@ interface TradeModal {
 export default function TradePage() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
-  const { gameState, activeEventId } = useGameStore();
+  const { gameState, activeEventId, setGameState } = useGameStore();
   const {
     balance,
     holdings,
@@ -83,6 +83,30 @@ export default function TradePage() {
     }
     if (user) void detectEvent();
   }, [user]);
+
+  // Poll game state every 3s as fallback when socket misses events
+  const gameStatus = gameState?.status;
+  useEffect(() => {
+    if (!activeEventId) return;
+    if (gameStatus === "ROUND_ACTIVE") return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/game/state?eventId=${activeEventId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setGameState(data);
+          if (data.status === "ROUND_ACTIVE") {
+            await fetchPortfolio(activeEventId);
+          }
+        }
+      } catch {
+        /* silent */
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeEventId, gameStatus, setGameState, fetchPortfolio]);
 
   function openModal(
     stockId: string,
@@ -287,7 +311,6 @@ export default function TradePage() {
 
         {/* MARKET + HOLDINGS */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* MARKET */}
           <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-4">
             <h2 className="text-xs uppercase tracking-widest text-green-400 font-bold pb-1 border-b border-green-500/20">
               Market
@@ -356,7 +379,6 @@ export default function TradePage() {
             </div>
           </div>
 
-          {/* HOLDINGS */}
           <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-4">
             <h2 className="text-xs uppercase tracking-widest text-green-400 font-bold pb-1 border-b border-green-500/20">
               Holdings

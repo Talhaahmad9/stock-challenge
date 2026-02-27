@@ -57,11 +57,7 @@ declare module 'socket.io' {
 
 io.use((socket: Socket, next) => {
   const token = socket.handshake.auth.token as string | undefined
-
-  if (!token) {
-    return next(new Error('No token provided'))
-  }
-
+  if (!token) return next(new Error('No token provided'))
   try {
     const payload = jwt.verify(token, JWT_SECRET) as JwtPayload
     socket.data.user = {
@@ -79,13 +75,10 @@ io.use((socket: Socket, next) => {
 
 io.on('connection', (socket: Socket) => {
   const { userId, role } = socket.data.user
-
   void socket.join(userId)
   if (role === 'admin') void socket.join('admin')
-
   console.log(`[socket] connected: ${socket.data.user.username} (${role}) — ${socket.id}`)
 
-  // ── 1. JOIN_GAME ────────────────────────────────────────────────────────────
   socket.on('JOIN_GAME', (payload: { userId: string; token: string }) => {
     try {
       jwt.verify(payload.token, JWT_SECRET)
@@ -96,104 +89,92 @@ io.on('connection', (socket: Socket) => {
     }
   })
 
-  // ── 2. LEAVE_GAME ───────────────────────────────────────────────────────────
-  socket.on('LEAVE_GAME', () => {
-    void socket.leave('game')
-  })
+  socket.on('LEAVE_GAME', () => { void socket.leave('game') })
 
-  // ── 3. EXECUTE_TRADE — redirect to REST ─────────────────────────────────────
   socket.on('EXECUTE_TRADE', () => {
     socket.emit('TRADE_ERROR', { error: 'Use REST API for trades' })
   })
 
-  // ── 4. ADMIN_START_GAME ─────────────────────────────────────────────────────
-  socket.on('ADMIN_START_GAME', (payload: { eventId: string }) => {
-    if (socket.data.user.role !== 'admin') return
-    io.to('game').emit('GAME_START', {
-      eventId: payload.eventId,
-      startTime: new Date().toISOString(),
-    })
-  })
-
-  // ── 5. ADMIN_PAUSE_GAME ─────────────────────────────────────────────────────
-  socket.on('ADMIN_PAUSE_GAME', (payload: { eventId: string }) => {
-    if (socket.data.user.role !== 'admin') return
-    io.to('game').emit('GAME_PAUSE', { eventId: payload.eventId })
-  })
-
-  // ── 6. ADMIN_RESUME_GAME ────────────────────────────────────────────────────
-  socket.on('ADMIN_RESUME_GAME', (payload: { eventId: string; remainingTime: number }) => {
-    if (socket.data.user.role !== 'admin') return
-    io.to('game').emit('GAME_RESUME', {
-      eventId: payload.eventId,
-      remainingTime: payload.remainingTime,
-    })
-  })
-
-  // ── 7. ADMIN_END_GAME ───────────────────────────────────────────────────────
-  socket.on('ADMIN_END_GAME', (payload: { eventId: string; finalScores: unknown }) => {
-    if (socket.data.user.role !== 'admin') return
-    io.to('game').emit('GAME_END', {
-      eventId: payload.eventId,
-      finalScores: payload.finalScores,
-    })
-  })
-
-  // ── 8. ADMIN_KICK_USER ──────────────────────────────────────────────────────
   socket.on('ADMIN_KICK_USER', (payload: { userId: string }) => {
     if (socket.data.user.role !== 'admin') return
     io.to(payload.userId).emit('FORCE_LOGOUT', { reason: 'Kicked by admin' })
     io.in(payload.userId)
       .fetchSockets()
-      .then((sockets) => {
-        for (const s of sockets) s.disconnect(true)
-      })
+      .then((sockets) => { for (const s of sockets) s.disconnect(true) })
       .catch((err: Error) => console.error('[socket] kick error:', err.message))
   })
 
-  // ── 9. BROADCAST_ROUND_START — admin only ───────────────────────────────────
-  socket.on('BROADCAST_ROUND_START', (payload: {
-    eventId: string
-    roundNumber: number
-    durationSeconds: number
-    prices: Record<string, number>
-    caseStudy: string | null
-  }) => {
-    if (socket.data.user.role !== 'admin') return  // FIX: guard added
-    io.to('game').emit('ROUND_START', {
-      roundNumber: payload.roundNumber,
-      durationSeconds: payload.durationSeconds,
-      prices: payload.prices,
-      caseStudy: payload.caseStudy,
-    })
-  })
-
-  // ── 10. BROADCAST_ROUND_END — admin only ────────────────────────────────────
-  socket.on('BROADCAST_ROUND_END', (payload: { eventId: string; roundNumber: number }) => {
-    if (socket.data.user.role !== 'admin') return  // FIX: guard added
-    io.to('game').emit('ROUND_END', { roundNumber: payload.roundNumber })
-  })
-
-  // ── 11. BROADCAST_TRADE — admin only ────────────────────────────────────────
-  socket.on('BROADCAST_TRADE', (payload: { userId: string; tradeData: unknown }) => {
-    if (socket.data.user.role !== 'admin') return  // FIX: guard added
-    io.to(payload.userId).emit('TRADE_EXECUTED', { ...(payload.tradeData as object) })
-    io.to('admin').emit('TRADE_LOG', { userId: payload.userId, tradeData: payload.tradeData })
-  })
-
-  // ── 12. TIMER_TICK ──────────────────────────────────────────────────────────
-  socket.on('TIMER_TICK', (payload: { eventId: string; remaining: number }) => {
-    if (socket.data.user.role !== 'admin') return  // FIX: guard added
-    io.to('game').emit('TIMER_TICK', { remaining: payload.remaining })
-  })
-
-  // ── Disconnect ──────────────────────────────────────────────────────────────
   socket.on('disconnect', (reason) => {
     console.log(`[socket] disconnected: ${socket.data.user.username} — ${reason}`)
   })
 })
 
-// ─── Broadcast helpers (used by admin panel directly) ─────────────────────────
+// ─── Internal broadcast endpoint (called by Next.js API routes) ───────────────
+// This is how the server-side API routes push real-time events to clients
+// without going through a socket connection themselves.
+
+app.post('/internal/broadcast', (req, res) => {
+  const { event, data } = req.body as { event: string; data: unknown }
+  io.to('game').emit(event, data)
+  console.log(`[broadcast] ${event}`, data)
+  res.json({ ok: true })
+})
+
+app.post('/internal/broadcast-user', (req, res) => {
+  const { userId, event, data } = req.body as { userId: string; event: string; data: unknown }
+  io.to(userId).emit(event, data)
+  res.json({ ok: true })
+})
+
+// ─── Timer loop ───────────────────────────────────────────────────────────────
+// Polls DB every second for active rounds and broadcasts TIMER_TICK
+
+async function timerLoop(): Promise<void> {
+  try {
+    // Find all events with an active round
+    const { data: activeStates } = await supabase
+      .from('game_state')
+      .select('event_id, timer_remaining, status')
+      .eq('status', 'ROUND_ACTIVE')
+
+    if (activeStates && activeStates.length > 0) {
+      for (const state of activeStates as { event_id: string; timer_remaining: number; status: string }[]) {
+        const newRemaining = Math.max(0, state.timer_remaining - 1)
+
+        // Update DB
+        await supabase
+          .from('game_state')
+          .update({ timer_remaining: newRemaining })
+          .eq('event_id', state.event_id)
+
+        // Broadcast to participants
+        io.to('game').emit('TIMER_TICK', { remaining: newRemaining })
+
+        // If timer expired, auto-end the round
+        if (newRemaining === 0) {
+          console.log(`[timer] round expired for event ${state.event_id}`)
+          io.to('game').emit('ROUND_END', { auto: true })
+          await supabase
+            .from('game_state')
+            .update({ status: 'ROUND_END' })
+            .eq('event_id', state.event_id)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[timer] error:', err)
+  }
+
+  setTimeout(() => void timerLoop(), 1000)
+}
+
+// ─── HTTP routes ──────────────────────────────────────────────────────────────
+
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', connections: io.engine.clientsCount })
+})
+
+// ─── Broadcast helpers ────────────────────────────────────────────────────────
 
 export function broadcastToGame(event: string, data: unknown): void {
   io.to('game').emit(event, data)
@@ -203,14 +184,9 @@ export function broadcastToUser(userId: string, event: string, data: unknown): v
   io.to(userId).emit(event, data)
 }
 
-// ─── HTTP routes ──────────────────────────────────────────────────────────────
-
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', connections: io.engine.clientsCount })
-})
-
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 server.listen(PORT, () => {
   console.log(`[socket] server running on port ${PORT}`)
+  void timerLoop()
 })

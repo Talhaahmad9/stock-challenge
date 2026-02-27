@@ -1,121 +1,142 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import { useAuthStore } from "@/store/authStore";
 import { useGameStore } from "@/store/gameStore";
 import { usePortfolioStore } from "@/store/portfolioStore";
 import type { HoldingWithStock } from "@/lib/supabase/database.types";
 
-function getTokenFromCookie(): string {
-  if (typeof document === "undefined") return "";
-  const entry = document.cookie
-    .split(";")
-    .find((c) => c.trim().startsWith("session_token="));
-  return entry ? entry.trim().slice("session_token=".length) : "";
+// FIX: token must come from API — httpOnly cookies are not readable by JS
+async function fetchSocketToken(): Promise<string> {
+  try {
+    const res = await fetch("/api/auth/token");
+    if (!res.ok) return "";
+    const data = (await res.json()) as { token?: string };
+    return data.token ?? "";
+  } catch {
+    return "";
+  }
 }
 
 export default function useSocket(eventId: string | null) {
   const socketRef = useRef<Socket | null>(null);
+  const [isConnected, setIsConnectedState] = useState(false);
 
   const user = useAuthStore((s) => s.user);
-  const { setConnected, updateTimer, updateStatus, updateRound, isConnected } =
+  const { setConnected, updateTimer, updateStatus, updateRound } =
     useGameStore();
-  const { updateAfterTrade } = usePortfolioStore();
+  const { updateAfterTrade, fetchPortfolio } = usePortfolioStore();
 
   useEffect(() => {
     if (!eventId || !user) return;
 
-    const token = getTokenFromCookie();
+    let cancelled = false;
 
-    const socket = io(
-      process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:4000",
-      {
-        auth: { token },
-        transports: ["websocket"],
-      },
-    );
+    async function connect() {
+      const token = await fetchSocketToken();
+      if (!token || cancelled) return;
 
-    socketRef.current = socket;
+      const socket = io(
+        process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:4000",
+        {
+          auth: { token },
+          transports: ["websocket"],
+        },
+      );
 
-    socket.on("connect", () => {
-      setConnected(true);
-      socket.emit("JOIN_GAME", { userId: user.id, token });
-    });
+      socketRef.current = socket;
 
-    socket.on("disconnect", () => {
-      setConnected(false);
-    });
-
-    socket.on("AUTH_ERROR", (payload: { error: string }) => {
-      console.error("[socket] AUTH_ERROR:", payload.error);
-      socket.disconnect();
-    });
-
-    socket.on("JOINED", (payload: { userId: string }) => {
-      console.log("[socket] joined game room as", payload.userId);
-    });
-
-    socket.on("GAME_START", () => updateStatus("RUNNING"));
-
-    socket.on(
-      "ROUND_START",
-      (payload: {
-        roundNumber: number;
-        durationSeconds: number;
-        prices: Record<string, number>;
-        caseStudy: string | null;
-      }) => {
-        updateStatus("ROUND_ACTIVE");
-        updateRound(payload.roundNumber);
-        updateTimer(payload.durationSeconds);
-      },
-    );
-
-    socket.on("ROUND_END", () => updateStatus("ROUND_END"));
-
-    socket.on("TIMER_TICK", (payload: { remaining: number }) => {
-      updateTimer(payload.remaining);
-    });
-
-    socket.on("GAME_PAUSE", () => updateStatus("PAUSED"));
-
-    socket.on("GAME_RESUME", (payload: { remainingTime: number }) => {
-      updateStatus("ROUND_ACTIVE");
-      updateTimer(payload.remainingTime);
-    });
-
-    socket.on("GAME_END", () => updateStatus("GAME_END"));
-
-    socket.on(
-      "TRADE_EXECUTED",
-      (payload: {
-        success: boolean;
-        newBalance: number;
-        newHoldings: HoldingWithStock[];
-      }) => {
-        if (payload.success) {
-          updateAfterTrade(payload.newBalance, payload.newHoldings);
+      socket.on("connect", () => {
+        if (cancelled) {
+          socket.disconnect();
+          return;
         }
-      },
-    );
+        setConnected(true);
+        setIsConnectedState(true);
+        socket.emit("JOIN_GAME", { userId: user!.id, token });
+      });
 
-    socket.on("FORCE_LOGOUT", (payload: { reason: string }) => {
-      alert(payload.reason);
-      window.location.href = "/login";
-    });
+      socket.on("disconnect", () => {
+        setConnected(false);
+        setIsConnectedState(false);
+      });
+
+      socket.on("AUTH_ERROR", (payload: { error: string }) => {
+        console.error("[socket] AUTH_ERROR:", payload.error);
+        socket.disconnect();
+      });
+
+      socket.on("JOINED", (payload: { userId: string }) => {
+        console.log("[socket] joined game room as", payload.userId);
+      });
+
+      socket.on("GAME_START", () => updateStatus("RUNNING"));
+
+      socket.on(
+        "ROUND_START",
+        (payload: {
+          roundNumber: number;
+          durationSeconds: number;
+          prices: Record<string, number>;
+          caseStudy: string | null;
+        }) => {
+          updateStatus("ROUND_ACTIVE");
+          updateRound(payload.roundNumber);
+          updateTimer(payload.durationSeconds);
+          // FIX: re-fetch portfolio when round starts so stocks + balance refresh
+          if (eventId) void fetchPortfolio(eventId);
+        },
+      );
+
+      socket.on("ROUND_END", () => {
+        updateStatus("ROUND_END");
+        if (eventId) void fetchPortfolio(eventId);
+      });
+
+      socket.on("TIMER_TICK", (payload: { remaining: number }) => {
+        updateTimer(payload.remaining);
+      });
+
+      socket.on("GAME_PAUSE", () => updateStatus("PAUSED"));
+
+      socket.on("GAME_RESUME", (payload: { remainingTime: number }) => {
+        updateStatus("ROUND_ACTIVE");
+        updateTimer(payload.remainingTime);
+      });
+
+      socket.on("GAME_END", () => {
+        updateStatus("GAME_END");
+        if (eventId) void fetchPortfolio(eventId);
+      });
+
+      socket.on(
+        "TRADE_EXECUTED",
+        (payload: {
+          success: boolean;
+          newBalance: number;
+          newHoldings: HoldingWithStock[];
+        }) => {
+          if (payload.success) {
+            updateAfterTrade(payload.newBalance, payload.newHoldings);
+          }
+        },
+      );
+
+      socket.on("FORCE_LOGOUT", (payload: { reason: string }) => {
+        alert(payload.reason);
+        window.location.href = "/login";
+      });
+    }
+
+    void connect();
 
     return () => {
-      socket.disconnect();
+      cancelled = true;
+      socketRef.current?.disconnect();
       socketRef.current = null;
+      setConnected(false);
+      setIsConnectedState(false);
     };
-  }, [
-    eventId,
-    user,
-    setConnected,
-    updateTimer,
-    updateStatus,
-    updateRound,
-    updateAfterTrade,
-  ]);
+  }, [eventId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const emit = useCallback((event: string, ...args: unknown[]) => {
     socketRef.current?.emit(event, ...args);
