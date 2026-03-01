@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, startTransition } from "react";
 
 interface AdminStockRow {
   id: string;
@@ -26,15 +26,21 @@ export default function StockManager({ eventId, totalRounds }: Props) {
     if (!eventId) return;
     try {
       const res = await fetch(`/api/admin/stocks?eventId=${eventId}`);
-      if (res.ok) {
-        const data = (await res.json()) as AdminStockRow[];
-        setStocks(data);
-        const inputs: Record<string, string> = {};
-        for (const s of data)
-          for (const p of s.prices)
-            inputs[`${s.id}-${p.roundNumber}`] = String(p.price);
-        setPriceInputs(inputs);
+      if (!res.ok) return;
+      const data = (await res.json()) as AdminStockRow[];
+
+      const inputs: Record<string, string> = {};
+      for (const s of data) {
+        for (const p of s.prices) {
+          inputs[`${s.id}-${p.roundNumber}`] = String(p.price);
+        }
       }
+
+      // Batch both updates in one render to avoid cascading renders warning
+      startTransition(() => {
+        setStocks(data);
+        setPriceInputs(inputs);
+      });
     } catch {
       /* silent */
     }

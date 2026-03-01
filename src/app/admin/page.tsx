@@ -53,7 +53,7 @@ export default function AdminPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const { socketRef, isConnected, emit } = useSocket(selectedEventId);
+  const { socketRef, isConnected } = useSocket(selectedEventId);
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -218,7 +218,6 @@ export default function AdminPage() {
               error={error}
               selectedEventId={selectedEventId}
               onAction={(action, extra) => void sendGameAction(action, extra)}
-              onBroadcast={(event, data) => emit(event, data)}
             />
           </>
         )}

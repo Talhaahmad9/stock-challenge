@@ -8,7 +8,6 @@ interface Props {
   error: string;
   selectedEventId: string | null;
   onAction: (action: string, extra?: Record<string, unknown>) => void;
-  onBroadcast: (event: string, data: Record<string, unknown>) => void;
 }
 
 export default function GameControls({
@@ -19,7 +18,6 @@ export default function GameControls({
   error,
   selectedEventId,
   onAction,
-  onBroadcast,
 }: Props) {
   const btn =
     "border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed";
@@ -41,7 +39,7 @@ export default function GameControls({
         </p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           <button
-            disabled={status !== "READY" || !!actionLoading}
+            disabled={status !== "READY" || !!actionLoading || !selectedEventId}
             onClick={() => onAction("START_GAME")}
             className={btn}
           >
@@ -91,41 +89,6 @@ export default function GameControls({
             className="border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
           >
             {actionLoading === "RESET" ? "..." : "RESET"}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-4 space-y-3">
-        <p className="text-xs uppercase tracking-widest text-green-700">
-          Broadcast
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            disabled={!selectedEventId}
-            onClick={() =>
-              onBroadcast("BROADCAST_ROUND_START", {
-                eventId: selectedEventId,
-                roundNumber: currentRound,
-                durationSeconds: 300,
-                prices: {},
-                caseStudy: null,
-              })
-            }
-            className={btn}
-          >
-            BROADCAST ROUND START
-          </button>
-          <button
-            disabled={!selectedEventId}
-            onClick={() =>
-              onBroadcast("BROADCAST_ROUND_END", {
-                eventId: selectedEventId,
-                roundNumber: currentRound,
-              })
-            }
-            className={btn}
-          >
-            BROADCAST ROUND END
           </button>
         </div>
       </div>
