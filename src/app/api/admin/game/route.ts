@@ -82,15 +82,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         if (event && users) {
           for (const u of users as { id: string }[]) {
-            await supabase.from("portfolios").upsert(
-              {
-                user_id: u.id,
-                event_id: eventId,
-                balance: (event as { starting_balance: number })
-                  .starting_balance,
-              },
-              { onConflict: "user_id,event_id" },
-            );
+            await supabase
+              .from("portfolios")
+              .upsert(
+                {
+                  user_id: u.id,
+                  event_id: eventId,
+                  balance: (event as { starting_balance: number })
+                    .starting_balance,
+                },
+                { onConflict: "user_id,event_id" },
+              );
           }
         }
 
@@ -111,17 +113,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             { status: 400 },
           );
         }
-        const roundResult = await startRound(eventId, roundNumber);
-        if (!roundResult.success)
-          return NextResponse.json(
-            { error: roundResult.error },
-            { status: 400 },
-          );
-
+        // Init timer FIRST so timer_remaining is set before status becomes ROUND_ACTIVE
+        // This prevents the timerLoop from seeing 0 and auto-ending the round
         const timerResult = await initRoundTimer(eventId, roundNumber);
         if (!timerResult.success)
           return NextResponse.json(
             { error: timerResult.error },
+            { status: 400 },
+          );
+
+        const roundResult = await startRound(eventId, roundNumber);
+        if (!roundResult.success)
+          return NextResponse.json(
+            { error: roundResult.error },
             { status: 400 },
           );
 
