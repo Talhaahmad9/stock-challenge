@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Spinner from "@/components/shared/Spinner";
 import type { TradeType } from "@/lib/supabase/database.types";
 
 interface Props {
@@ -113,7 +114,14 @@ export default function TradeModal({
             disabled={loading}
             className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold py-3 rounded text-xs uppercase tracking-widest"
           >
-            {loading ? "EXECUTING..." : "CONFIRM"}
+            {loading ? (
+              <>
+                <Spinner size="sm" />
+                <span>EXECUTING</span>
+              </>
+            ) : (
+              "CONFIRM"
+            )}
           </button>
           <button
             onClick={onClose}

@@ -1,5 +1,8 @@
 "use client";
 
+import Spinner from "@/components/shared/Spinner";
+import { useModal } from "@/hooks/useModal";
+
 interface Props {
   status: string;
   currentRound: number;
@@ -19,8 +22,20 @@ export default function GameControls({
   selectedEventId,
   onAction,
 }: Props) {
+  const { confirm, ModalRenderer } = useModal();
+
   const btn =
     "border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed";
+
+  function promptReset() {
+    confirm({
+      title: "RESET GAME",
+      message: "Reset game? This cannot be undone.",
+      confirmLabel: "RESET",
+      variant: "danger",
+      onConfirm: () => onAction("RESET"),
+    });
+  }
 
   return (
     <>
@@ -43,7 +58,11 @@ export default function GameControls({
             onClick={() => onAction("START_GAME")}
             className={btn}
           >
-            {actionLoading === "START_GAME" ? "..." : "START GAME"}
+            {actionLoading === "START_GAME" ? (
+              <Spinner size="sm" />
+            ) : (
+              "START GAME"
+            )}
           </button>
           <button
             disabled={
@@ -55,7 +74,11 @@ export default function GameControls({
             }
             className={btn}
           >
-            {actionLoading === "START_ROUND" ? "..." : "START ROUND"}
+            {actionLoading === "START_ROUND" ? (
+              <Spinner size="sm" />
+            ) : (
+              "START ROUND"
+            )}
           </button>
           <button
             disabled={status !== "ROUND_ACTIVE" || !!actionLoading}
@@ -64,34 +87,37 @@ export default function GameControls({
             }
             className={btn}
           >
-            {actionLoading === "END_ROUND" ? "..." : "END ROUND"}
+            {actionLoading === "END_ROUND" ? (
+              <Spinner size="sm" />
+            ) : (
+              "END ROUND"
+            )}
           </button>
           <button
             disabled={status !== "ROUND_ACTIVE" || !!actionLoading}
             onClick={() => onAction("PAUSE")}
             className={btn}
           >
-            {actionLoading === "PAUSE" ? "..." : "PAUSE"}
+            {actionLoading === "PAUSE" ? <Spinner size="sm" /> : "PAUSE"}
           </button>
           <button
             disabled={status !== "PAUSED" || !!actionLoading}
             onClick={() => onAction("RESUME")}
             className={btn}
           >
-            {actionLoading === "RESUME" ? "..." : "RESUME"}
+            {actionLoading === "RESUME" ? <Spinner size="sm" /> : "RESUME"}
           </button>
           <button
             disabled={!!actionLoading}
-            onClick={() => {
-              if (window.confirm("Reset game? This cannot be undone."))
-                onAction("RESET");
-            }}
-            className="border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
+            onClick={promptReset}
+            className="border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
           >
-            {actionLoading === "RESET" ? "..." : "RESET"}
+            {actionLoading === "RESET" ? <Spinner size="sm" /> : "RESET"}
           </button>
         </div>
       </div>
+
+      <ModalRenderer />
     </>
   );
 }

@@ -10,6 +10,10 @@ import GameControls from "@/components/admin/GameControls";
 import UserManager from "@/components/admin/UserManager";
 import StockManager from "@/components/admin/StockManager";
 import TradeMonitor from "@/components/admin/TradeMonitor";
+import EventManager from "@/components/admin/EventManager";
+import { useAuth } from "@/hooks/useAuth";
+import Spinner from "@/components/shared/Spinner";
+import Leaderboard from "@/components/shared/Leaderboard";
 
 interface EventRow {
   id: string;
@@ -17,6 +21,7 @@ interface EventRow {
   status: string;
   starting_balance: number;
   total_rounds: number;
+  current_round: number;
 }
 interface UserRow {
   id: string;
@@ -30,16 +35,19 @@ interface TradeLog {
   timestamp: string;
   tradeData: { type: string; symbol?: string; quantity: number; price: number };
 }
-type Tab = "control" | "users" | "stocks" | "monitor";
+type Tab = "control" | "users" | "stocks" | "monitor" | "events";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "control", label: "CONTROL" },
   { key: "users", label: "USERS" },
   { key: "stocks", label: "STOCKS" },
   { key: "monitor", label: "MONITOR" },
+  { key: "events", label: "EVENTS" },
 ];
 
 export default function AdminPage() {
+  // ── All hooks first — no early returns before this block ──────────────────
+  const { ready } = useAuth("admin");
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const { logout } = useAuthStore();
@@ -91,11 +99,6 @@ export default function AdminPage() {
     },
     [setGameState],
   );
-
-  useEffect(() => {
-    if (!user) router.push("/login");
-    else if (user.role !== "admin") router.push("/trade");
-  }, [user, router]);
 
   useEffect(() => {
     void fetchEvents();
@@ -160,6 +163,15 @@ export default function AdminPage() {
   const currentRound = gameState?.currentRound ?? 0;
   const totalRounds = gameState?.totalRounds ?? 0;
 
+  // ── Early returns after all hooks ─────────────────────────────────────────
+
+  if (!ready)
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Spinner />
+      </div>
+    );
+
   return (
     <div className="min-h-screen bg-black font-mono text-green-400">
       <header className="sticky top-0 z-40 bg-black border-b border-green-500/20 px-4 py-3 flex items-center justify-between">
@@ -180,7 +192,7 @@ export default function AdminPage() {
               await logout();
               router.push("/login");
             }}
-            className="border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase"
+            className="border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase cursor-pointer"
           >
             LOGOUT
           </button>
@@ -193,7 +205,7 @@ export default function AdminPage() {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`py-3 text-xs tracking-widest uppercase transition-colors whitespace-nowrap ${activeTab === tab.key ? "border-b-2 border-green-400 text-green-400" : "text-green-700 hover:text-green-400"}`}
+              className={`py-3 text-xs tracking-widest uppercase transition-colors whitespace-nowrap cursor-pointer ${activeTab === tab.key ? "border-b-2 border-green-400 text-green-400" : "text-green-700 hover:text-green-400"}`}
             >
               {tab.label}
             </button>
@@ -228,7 +240,24 @@ export default function AdminPage() {
           <StockManager eventId={selectedEventId} totalRounds={totalRounds} />
         )}
         {activeTab === "monitor" && (
-          <TradeMonitor logs={tradeLogs} isConnected={isConnected} />
+          <div className="space-y-6">
+            <TradeMonitor logs={tradeLogs} isConnected={isConnected} />
+            {selectedEventId && (
+              <Leaderboard
+                eventId={selectedEventId}
+                pollInterval={10_000}
+                showBreakdown
+              />
+            )}
+          </div>
+        )}
+        {activeTab === "events" && (
+          <EventManager
+            events={events}
+            selectedEventId={selectedEventId}
+            onSelect={(id) => setSelectedEventId(id || null)}
+            onRefresh={() => void fetchEvents()}
+          />
         )}
       </main>
     </div>

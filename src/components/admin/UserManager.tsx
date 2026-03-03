@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Spinner from "@/components/shared/Spinner";
+import { useModal } from "@/hooks/useModal";
 
 interface UserRow {
   id: string;
@@ -14,12 +16,15 @@ interface Props {
 }
 
 export default function UserManager({ users, onRefresh }: Props) {
+  const { alert, confirm, ModalRenderer } = useModal();
   const [count, setCount] = useState("");
   const [prefix, setPrefix] = useState("player");
   const [generated, setGenerated] = useState<
     { username: string; password: string }[]
   >([]);
   const [loading, setLoading] = useState(false);
+  // track which user row is mid-request: "reset:{id}" | "toggle:{id}"
+  const [rowLoading, setRowLoading] = useState<string | null>(null);
 
   async function handleGenerate() {
     const n = parseInt(count, 10);
@@ -44,30 +49,66 @@ export default function UserManager({ users, onRefresh }: Props) {
   }
 
   async function handleResetPassword(userId: string) {
-    const res = await fetch("/api/admin/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "RESET_PASSWORD", userId }),
-    });
-    const data = (await res.json()) as { newPassword?: string; error?: string };
-    alert(
-      data.newPassword
-        ? `New password: ${data.newPassword}`
-        : (data.error ?? "Failed"),
-    );
+    setRowLoading(`reset:${userId}`);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "RESET_PASSWORD", userId }),
+      });
+      const data = (await res.json()) as { newPassword?: string; error?: string };
+      if (data.newPassword) {
+        alert({
+          title: "PASSWORD RESET",
+          message: `New password: ${data.newPassword}`,
+          confirmLabel: "OK",
+        });
+      } else {
+        alert({
+          title: "ERROR",
+          message: data.error ?? "Failed to reset password",
+          confirmLabel: "OK",
+        });
+      }
+    } catch {
+      /* silent */
+    } finally {
+      setRowLoading(null);
+    }
   }
 
-  async function handleToggleActive(userId: string, isActive: boolean) {
-    await fetch("/api/admin/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "TOGGLE_ACTIVE",
-        userId,
-        isActive: !isActive,
-      }),
-    });
-    onRefresh();
+  function promptToggleActive(userId: string, isActive: boolean) {
+    if (isActive) {
+      confirm({
+        title: "DISABLE USER",
+        message: "This user will no longer be able to log in.",
+        confirmLabel: "DISABLE",
+        variant: "danger",
+        onConfirm: () => void doToggleActive(userId, isActive),
+      });
+    } else {
+      void doToggleActive(userId, isActive);
+    }
+  }
+
+  async function doToggleActive(userId: string, isActive: boolean) {
+    setRowLoading(`toggle:${userId}`);
+    try {
+      await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "TOGGLE_ACTIVE",
+          userId,
+          isActive: !isActive,
+        }),
+      });
+      onRefresh();
+    } catch {
+      /* silent */
+    } finally {
+      setRowLoading(null);
+    }
   }
 
   function copyCSV() {
@@ -119,7 +160,7 @@ export default function UserManager({ users, onRefresh }: Props) {
           disabled={loading || !count}
           className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          {loading ? "GENERATING..." : "GENERATE"}
+          {loading ? <Spinner size="sm" /> : "GENERATE"}
         </button>
 
         {generated.length > 0 && (
@@ -211,17 +252,31 @@ export default function UserManager({ users, onRefresh }: Props) {
                       <div className="flex justify-end gap-2">
                         <button
                           onClick={() => void handleResetPassword(u.id)}
-                          className="border border-green-500/30 text-green-700 hover:text-green-400 hover:border-green-400 text-xs px-2 py-1 rounded tracking-widest uppercase"
+                          disabled={rowLoading !== null}
+                          className="border border-green-500/30 text-green-700 hover:text-green-400 hover:border-green-400 text-xs px-2 py-1 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
                         >
-                          RESET PWD
+                          {rowLoading === `reset:${u.id}` ? (
+                            <Spinner size="sm" />
+                          ) : (
+                            "RESET PWD"
+                          )}
                         </button>
                         <button
-                          onClick={() =>
-                            void handleToggleActive(u.id, u.is_active)
-                          }
-                          className={`text-xs px-2 py-1 rounded tracking-widest uppercase ${u.is_active ? "border border-red-500/50 text-red-400 hover:bg-red-500/10" : "border border-green-500/30 text-green-400 hover:bg-green-500/10"}`}
+                          onClick={() => promptToggleActive(u.id, u.is_active)}
+                          disabled={rowLoading !== null}
+                          className={`text-xs px-2 py-1 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed ${
+                            u.is_active
+                              ? "border border-red-500/50 text-red-400 hover:bg-red-500/10"
+                              : "border border-green-500/30 text-green-400 hover:bg-green-500/10"
+                          }`}
                         >
-                          {u.is_active ? "DISABLE" : "ENABLE"}
+                          {rowLoading === `toggle:${u.id}` ? (
+                            <Spinner size="sm" />
+                          ) : u.is_active ? (
+                            "DISABLE"
+                          ) : (
+                            "ENABLE"
+                          )}
                         </button>
                       </div>
                     </td>
@@ -232,6 +287,7 @@ export default function UserManager({ users, onRefresh }: Props) {
           </div>
         )}
       </div>
+      <ModalRenderer />
     </>
   );
 }
