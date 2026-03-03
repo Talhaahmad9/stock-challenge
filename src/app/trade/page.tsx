@@ -24,7 +24,7 @@ interface ActiveTrade {
 
 function formatCurrency(v: number) {
   return (
-    "₨" +
+    "Rs" +
     v.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -33,20 +33,17 @@ function formatCurrency(v: number) {
 }
 
 export default function TradePage() {
-  // ── All hooks first — no early returns before this block ──────────────────
   const { ready } = useAuth("any");
   const user = useAuthStore((s) => s.user);
   const { gameState, activeEventId, setGameState } = useGameStore();
-  const {
-    balance,
-    holdings,
-    stocks,
-    isLoading,
-    fetchPortfolio,
-    getPortfolioValue,
-    getTotalValue,
-    getTotalPnL,
-  } = usePortfolioStore();
+  const { balance, holdings, stocks, isLoading, fetchPortfolio } =
+    usePortfolioStore();
+
+  // Reactive computed values
+  const portfolioValue = usePortfolioStore((s) => s.getPortfolioValue());
+  const totalPnL = usePortfolioStore((s) => s.getTotalPnL());
+  const totalValue = usePortfolioStore((s) => s.getTotalValue());
+
   const { isConnected: socketConnected } = useSocket(activeEventId);
   const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
   const [tradeTab, setTradeTab] = useState<"market" | "leaderboard">("market");
@@ -62,12 +59,10 @@ export default function TradePage() {
         };
         useGameStore.getState().setActiveEventId(data.id);
         usePortfolioStore.getState().setStartingBalance(data.starting_balance);
-        const gsRes = await fetch(`/api/game/state?eventId=${data.id}`);
+        const gsRes = await fetch("/api/game/state?eventId=" + data.id);
         if (gsRes.ok) useGameStore.getState().setGameState(await gsRes.json());
         await usePortfolioStore.getState().fetchPortfolio(data.id);
-      } catch {
-        /* silent */
-      }
+      } catch {}
     }
     if (user) void detectEvent();
   }, [user]);
@@ -77,21 +72,17 @@ export default function TradePage() {
     if (!activeEventId || gameStatus === "ROUND_ACTIVE") return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/game/state?eventId=${activeEventId}`);
+        const res = await fetch("/api/game/state?eventId=" + activeEventId);
         if (res.ok) {
           const data = await res.json();
           setGameState(data);
           if (data.status === "ROUND_ACTIVE")
             await fetchPortfolio(activeEventId);
         }
-      } catch {
-        /* silent */
-      }
+      } catch {}
     }, 3000);
     return () => clearInterval(interval);
   }, [activeEventId, gameStatus, setGameState, fetchPortfolio]);
-
-  // ── Early returns after all hooks ─────────────────────────────────────────
 
   if (!ready)
     return (
@@ -117,7 +108,7 @@ export default function TradePage() {
             WAITING FOR GAME TO START
           </p>
           <p className="text-xs text-green-700 tracking-widest uppercase">
-            Stand by — competition will begin shortly
+            Stand by - competition will begin shortly
           </p>
           {user && (
             <p className="text-xs text-green-900 tracking-widest">
@@ -140,29 +131,32 @@ export default function TradePage() {
             FINAL RESULTS
           </span>
           <span className="text-green-700 tracking-widest uppercase text-xs">
-            {user?.username ?? "—"}
+            {user?.username ?? "..."}
           </span>
         </header>
         <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
           <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-6 text-center space-y-3">
             <p className="text-xs uppercase tracking-widest text-green-700">
-              Competition Ended — Final Portfolio Value
+              Competition Ended - Final Portfolio Value
             </p>
             <p
               className="text-4xl font-bold text-green-400 tabular-nums"
               style={{ textShadow: "0 0 20px #00ff41" }}
             >
-              {formatCurrency(getTotalValue())}
+              {formatCurrency(totalValue)}
             </p>
             <p
-              className={`text-lg tabular-nums font-bold ${getTotalPnL() >= 0 ? "text-green-400" : "text-red-400"}`}
+              className={
+                "text-lg tabular-nums font-bold " +
+                (totalPnL >= 0 ? "text-green-400" : "text-red-400")
+              }
             >
-              {getTotalPnL() >= 0 ? "+" : ""}
-              {formatCurrency(getTotalPnL())} P&L
+              {totalPnL >= 0 ? "+" : ""}
+              {formatCurrency(totalPnL)} P&L
             </p>
           </div>
           {activeEventId && (
-            <Leaderboard eventId={activeEventId} pollInterval={10_000} />
+            <Leaderboard eventId={activeEventId} pollInterval={10000} />
           )}
         </main>
       </div>
@@ -179,15 +173,18 @@ export default function TradePage() {
         </span>
         <span className="hidden md:block text-green-700 text-sm tracking-widest">
           {gameState.currentRound > 0
-            ? `ROUND ${gameState.currentRound}/${gameState.totalRounds}`
+            ? "ROUND " + gameState.currentRound + "/" + gameState.totalRounds
             : "PRE-GAME"}
         </span>
         <div className="flex items-center gap-3 text-xs">
           <span
-            className={`w-2 h-2 rounded-full ${socketConnected ? "bg-green-400" : "bg-red-500"}`}
+            className={
+              "w-2 h-2 rounded-full " +
+              (socketConnected ? "bg-green-400" : "bg-red-500")
+            }
           />
           <span className="text-green-700 tracking-widest uppercase">
-            {user?.username ?? "—"}
+            {user?.username ?? "..."}
           </span>
         </div>
       </header>
@@ -195,8 +192,8 @@ export default function TradePage() {
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         <StatsBar
           balance={balance}
-          portfolioValue={getPortfolioValue()}
-          pnl={getTotalPnL()}
+          portfolioValue={portfolioValue}
+          pnl={totalPnL}
           isLoading={isLoading}
         />
 
@@ -214,7 +211,12 @@ export default function TradePage() {
             <button
               key={tab}
               onClick={() => setTradeTab(tab)}
-              className={`py-2 text-xs tracking-widest uppercase transition-colors cursor-pointer ${tradeTab === tab ? "border-b-2 border-green-400 text-green-400" : "text-green-700 hover:text-green-400"}`}
+              className={
+                "py-2 text-xs tracking-widest uppercase transition-colors cursor-pointer " +
+                (tradeTab === tab
+                  ? "border-b-2 border-green-400 text-green-400"
+                  : "text-green-700 hover:text-green-400")
+              }
             >
               {tab}
             </button>
@@ -234,7 +236,7 @@ export default function TradePage() {
           </div>
         )}
         {tradeTab === "leaderboard" && activeEventId && (
-          <Leaderboard eventId={activeEventId} pollInterval={10_000} />
+          <Leaderboard eventId={activeEventId} pollInterval={10000} />
         )}
       </main>
 
