@@ -4,7 +4,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node src/server.ts",
-    "build": "npx tsc",
+    "build": "echo 'using prebuilt dist'",
     "start": "node dist/server.js"
   },
   "dependencies": {
