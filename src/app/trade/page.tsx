@@ -256,9 +256,6 @@ export default function TradePage() {
             )}
           </div>
         )}
-        {tradeTab === "leaderboard" && activeEventId && (
-          <Leaderboard eventId={activeEventId} pollInterval={10000} />
-        )}
       </main>
 
       {activeTrade && activeEventId && (
