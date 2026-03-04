@@ -66,9 +66,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       name?: string;
       starting_balance?: number;
       total_rounds?: number;
+      round_duration_seconds?: number;
     };
 
-    const { name, starting_balance, total_rounds } = body;
+    const {
+      name,
+      starting_balance,
+      total_rounds,
+      round_duration_seconds = 300,
+    } = body;
 
     if (!name || starting_balance === undefined || total_rounds === undefined) {
       return NextResponse.json(
@@ -87,7 +93,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         total_rounds,
         status: "IDLE",
         current_round: 0,
-        created_by: auth.user!.id,
+        created_by: auth.user?.id,
       })
       .select("id, name, status, starting_balance, current_round, total_rounds")
       .single();
@@ -101,24 +107,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const newEvent = data as unknown as EventRow;
 
-    // Initialise game state for this event
     await initGameState(newEvent.id, total_rounds);
 
-    // Create rounds
     const rounds = Array.from({ length: total_rounds }, (_, i) => ({
       event_id: newEvent.id,
       round_number: i + 1,
-      duration_seconds: 300,
+      duration_seconds: round_duration_seconds,
       status: "pending",
     }));
     await supabase.from("rounds").insert(rounds);
 
-    // Transition to READY so the event is immediately usable
     await supabase
       .from("game_state")
       .update({ status: "READY" })
       .eq("event_id", newEvent.id);
-
     await supabase
       .from("events")
       .update({ status: "READY" })
@@ -146,14 +148,41 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "eventId required" }, { status: 400 });
     }
 
+    const { eventId } = body;
     const supabase = (await createServiceClient()) as unknown as SupabaseClient;
-    const { error } = await supabase
-      .from("events")
-      .delete()
-      .eq("id", body.eventId);
 
-    if (error)
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    // Get all portfolios for this event (needed to delete holdings)
+    const { data: portfolios } = await supabase
+      .from("portfolios")
+      .select("id")
+      .eq("event_id", eventId);
+
+    const portfolioIds = (portfolios ?? []).map((p: { id: string }) => p.id);
+
+    // Get all stocks for this event (needed to delete stock_prices)
+    const { data: stocks } = await supabase
+      .from("stocks")
+      .select("id")
+      .eq("event_id", eventId);
+
+    const stockIds = (stocks ?? []).map((s: { id: string }) => s.id);
+
+    // Delete in correct dependency order
+    if (portfolioIds.length > 0) {
+      await supabase.from("holdings").delete().in("portfolio_id", portfolioIds);
+      await supabase.from("trades").delete().in("portfolio_id", portfolioIds);
+      await supabase.from("portfolios").delete().in("id", portfolioIds);
+    }
+
+    if (stockIds.length > 0) {
+      await supabase.from("stock_prices").delete().in("stock_id", stockIds);
+      await supabase.from("stocks").delete().in("id", stockIds);
+    }
+
+    await supabase.from("rounds").delete().eq("event_id", eventId);
+    await supabase.from("game_state").delete().eq("event_id", eventId);
+    await supabase.from("events").delete().eq("id", eventId);
+
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json(

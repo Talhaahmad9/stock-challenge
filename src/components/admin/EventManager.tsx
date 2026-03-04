@@ -53,10 +53,11 @@ export default function EventManager({
   const [name, setName] = useState("");
   const [balance, setBalance] = useState("100000");
   const [rounds, setRounds] = useState("5");
+  const [roundDuration, setRoundDuration] = useState("5");
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function handleCreate() {
     if (!name.trim()) {
@@ -65,12 +66,17 @@ export default function EventManager({
     }
     const bal = parseFloat(balance);
     const rnd = parseInt(rounds, 10);
+    const dur = parseInt(roundDuration, 10);
     if (isNaN(bal) || bal <= 0) {
       setError("Enter a valid starting balance");
       return;
     }
     if (isNaN(rnd) || rnd < 1 || rnd > 10) {
       setError("Rounds must be between 1 and 10");
+      return;
+    }
+    if (isNaN(dur) || dur < 1 || dur > 60) {
+      setError("Round duration must be between 1 and 60 minutes");
       return;
     }
 
@@ -85,13 +91,15 @@ export default function EventManager({
           name: name.trim(),
           starting_balance: bal,
           total_rounds: rnd,
+          round_duration_seconds: dur * 60,
         }),
       });
       const data = (await res.json()) as EventRow & { error?: string };
       if (!res.ok) {
         setError(data.error ?? "Failed to create event");
       } else {
-        setSuccess(`"${data.name}" created — select it from the list below`);
+        setSuccess(`"${data.name}" created successfully`);
+        setTimeout(() => setSuccess(""), 3000);
         setName("");
         onRefresh();
         onSelect(data.id);
@@ -103,7 +111,7 @@ export default function EventManager({
     }
   }
 
-  async function handleDelete(eventId: string, eventName: string) {
+  function handleDelete(eventId: string, eventName: string) {
     confirm({
       title: "DELETE EVENT",
       message: `Delete "${eventName}"? This will permanently remove all rounds, stocks, trades and portfolios.`,
@@ -153,7 +161,7 @@ export default function EventManager({
               className={inp}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
               <label className="text-xs text-green-700 uppercase tracking-widest">
                 Starting Balance (₨)
@@ -181,6 +189,20 @@ export default function EventManager({
                 className={inp}
               />
             </div>
+            <div className="space-y-1">
+              <label className="text-xs text-green-700 uppercase tracking-widest">
+                Round Duration (min)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={60}
+                value={roundDuration}
+                onChange={(e) => setRoundDuration(e.target.value)}
+                placeholder="5"
+                className={inp}
+              />
+            </div>
           </div>
         </div>
 
@@ -194,16 +216,10 @@ export default function EventManager({
         <button
           onClick={() => void handleCreate()}
           disabled={loading || !name.trim()}
-          className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-4 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed"
+          className="border border-green-500/30 text-green-400 hover:border-green-400 hover:bg-green-500/10 text-xs px-4 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
         >
           {loading ? <Spinner size="sm" /> : "CREATE EVENT"}
         </button>
-
-        <p className="text-xs text-green-900 tracking-widest">
-          Creates the event, initializes game state, and generates{" "}
-          {rounds || "N"} rounds of 5 minutes each. Round durations can be
-          adjusted per-round after creation.
-        </p>
       </div>
 
       {/* EVENTS LIST */}
@@ -226,11 +242,12 @@ export default function EventManager({
             {events.map((ev) => (
               <div
                 key={ev.id}
-                className={`flex items-center justify-between p-3 rounded border transition-colors cursor-pointer ${
-                  selectedEventId === ev.id
+                className={
+                  "flex items-center justify-between p-3 rounded border transition-colors cursor-pointer " +
+                  (selectedEventId === ev.id
                     ? "border-green-400 bg-green-500/5"
-                    : "border-green-500/10 hover:border-green-500/30"
-                }`}
+                    : "border-green-500/10 hover:border-green-500/30")
+                }
                 onClick={() => onSelect(ev.id)}
               >
                 <div className="space-y-1 min-w-0">
@@ -254,17 +271,20 @@ export default function EventManager({
                 </div>
                 <div className="flex items-center gap-3 shrink-0 ml-3">
                   <span
-                    className={`text-xs border px-2 py-0.5 rounded tracking-widest ${statusColor(ev.status)}`}
+                    className={
+                      "text-xs border px-2 py-0.5 rounded tracking-widest " +
+                      statusColor(ev.status)
+                    }
                   >
                     {ev.status}
                   </span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      void handleDelete(ev.id, ev.name);
+                      handleDelete(ev.id, ev.name);
                     }}
                     disabled={deletingId === ev.id}
-                    className="border border-red-500/30 text-red-500/50 hover:text-red-400 hover:border-red-500 text-xs px-2 py-1 rounded tracking-widest uppercase transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="border border-red-500/30 text-red-500/50 hover:text-red-400 hover:border-red-500 text-xs px-2 py-1 rounded tracking-widest uppercase transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer min-w-[56px] text-center"
                   >
                     {deletingId === ev.id ? <Spinner size="sm" /> : "DELETE"}
                   </button>

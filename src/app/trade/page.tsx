@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useGameStore } from "@/store/gameStore";
 import { usePortfolioStore } from "@/store/portfolioStore";
@@ -34,7 +35,9 @@ function formatCurrency(v: number) {
 
 export default function TradePage() {
   const { ready } = useAuth("any");
+  const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const { logout } = useAuthStore();
   const { gameState, activeEventId, setGameState } = useGameStore();
   const { balance, holdings, stocks, isLoading, fetchPortfolio } =
     usePortfolioStore();
@@ -186,6 +189,15 @@ export default function TradePage() {
           <span className="text-green-700 tracking-widest uppercase">
             {user?.username ?? "..."}
           </span>
+          <button
+            onClick={async () => {
+              await logout();
+              router.push("/login");
+            }}
+            className="border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs px-3 py-1 rounded tracking-widest uppercase cursor-pointer"
+          >
+            LOGOUT
+          </button>
         </div>
       </header>
 

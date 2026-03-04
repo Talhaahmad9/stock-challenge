@@ -46,7 +46,6 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 export default function AdminPage() {
-  // ── All hooks first — no early returns before this block ──────────────────
   const { ready } = useAuth("admin");
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
@@ -60,6 +59,11 @@ export default function AdminPage() {
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  // Lifted state — persists across tab switches
+  const [generated, setGenerated] = useState<
+    { username: string; password: string }[]
+  >([]);
 
   const { socketRef, isConnected } = useSocket(selectedEventId);
 
@@ -163,8 +167,6 @@ export default function AdminPage() {
   const currentRound = gameState?.currentRound ?? 0;
   const totalRounds = gameState?.totalRounds ?? 0;
 
-  // ── Early returns after all hooks ─────────────────────────────────────────
-
   if (!ready)
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -234,7 +236,20 @@ export default function AdminPage() {
           </>
         )}
         {activeTab === "users" && (
-          <UserManager users={users} onRefresh={() => void fetchUsers()} />
+          <UserManager
+            users={users}
+            generated={generated}
+            onGenerated={setGenerated}
+            onRefresh={() => void fetchUsers()}
+            onDeleteUser={(userId) =>
+              setGenerated((prev) =>
+                prev.filter((u) => {
+                  const match = users.find((ur) => ur.id === userId);
+                  return !match || u.username !== match.username;
+                }),
+              )
+            }
+          />
         )}
         {activeTab === "stocks" && (
           <StockManager eventId={selectedEventId} totalRounds={totalRounds} />
