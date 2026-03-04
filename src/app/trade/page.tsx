@@ -15,6 +15,7 @@ import MarketList from "@/components/trade/MarketList";
 import HoldingsList from "@/components/trade/HoldingsList";
 import TradeModal from "@/components/trade/TradeModal";
 import Leaderboard from "@/components/shared/Leaderboard";
+import StockChart from "@/components/trade/StockChart";
 
 interface ActiveTrade {
   stockId: string;
@@ -236,15 +237,23 @@ export default function TradePage() {
         </div>
 
         {tradeTab === "market" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <MarketList
-              stocks={stocks}
-              holdings={holdings}
-              onTrade={(stockId, symbol, price, type) =>
-                setActiveTrade({ stockId, symbol, price, type })
-              }
-            />
-            <HoldingsList holdings={holdings} />
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <MarketList
+                stocks={stocks}
+                holdings={holdings}
+                onTrade={(stockId, symbol, price, type) =>
+                  setActiveTrade({ stockId, symbol, price, type })
+                }
+              />
+              <HoldingsList holdings={holdings} />
+            </div>
+            {activeEventId && gameState.currentRound > 0 && (
+              <StockChart
+                eventId={activeEventId}
+                currentRound={gameState.currentRound}
+              />
+            )}
           </div>
         )}
         {tradeTab === "leaderboard" && activeEventId && (

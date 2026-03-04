@@ -111,7 +111,12 @@ export default function EventManager({
     }
   }
 
-  function handleDelete(eventId: string, eventName: string) {
+  function isEventLocked(status: string) {
+    return status === "ROUND_ACTIVE" || status === "PAUSED";
+  }
+
+  function handleDelete(eventId: string, eventName: string, status: string) {
+    if (isEventLocked(status)) return;
     confirm({
       title: "DELETE EVENT",
       message: `Delete "${eventName}"? This will permanently remove all rounds, stocks, trades and portfolios.`,
@@ -281,12 +286,23 @@ export default function EventManager({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDelete(ev.id, ev.name);
+                      handleDelete(ev.id, ev.name, ev.status);
                     }}
-                    disabled={deletingId === ev.id}
+                    disabled={deletingId === ev.id || isEventLocked(ev.status)}
+                    title={
+                      isEventLocked(ev.status)
+                        ? "Cannot delete while game is running"
+                        : "Delete event"
+                    }
                     className="border border-red-500/30 text-red-500/50 hover:text-red-400 hover:border-red-500 text-xs px-2 py-1 rounded tracking-widest uppercase transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer min-w-[56px] text-center"
                   >
-                    {deletingId === ev.id ? <Spinner size="sm" /> : "DELETE"}
+                    {deletingId === ev.id ? (
+                      <Spinner size="sm" />
+                    ) : isEventLocked(ev.status) ? (
+                      "LOCKED"
+                    ) : (
+                      "DELETE"
+                    )}
                   </button>
                 </div>
               </div>

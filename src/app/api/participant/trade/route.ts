@@ -80,8 +80,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
-  // Notify participant's socket with updated portfolio
-  await socketPost("/internal/broadcast-user", {
+  // Fire socket notifications without blocking the response
+  void socketPost("/internal/broadcast-user", {
     userId: user.id,
     event: "TRADE_EXECUTED",
     data: {
@@ -91,8 +91,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     },
   });
 
-  // Notify admin monitor
-  await socketPost("/internal/broadcast", {
+  void socketPost("/internal/broadcast", {
     event: "TRADE_LOG",
     data: {
       userId: user.id,
