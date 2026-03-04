@@ -45,6 +45,17 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "events", label: "EVENTS" },
 ];
 
+function loadGeneratedFromSession(): { username: string; password: string }[] {
+  try {
+    const saved = sessionStorage.getItem("generated-users");
+    return saved
+      ? (JSON.parse(saved) as { username: string; password: string }[])
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function AdminPage() {
   const { ready } = useAuth("admin");
   const router = useRouter();
@@ -59,11 +70,16 @@ export default function AdminPage() {
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState("");
-
-  // Lifted state — persists across tab switches
   const [generated, setGenerated] = useState<
     { username: string; password: string }[]
-  >([]);
+  >(loadGeneratedFromSession);
+
+  function updateGenerated(list: { username: string; password: string }[]) {
+    setGenerated(list);
+    try {
+      sessionStorage.setItem("generated-users", JSON.stringify(list));
+    } catch {}
+  }
 
   const { socketRef, isConnected } = useSocket(selectedEventId);
 
@@ -239,16 +255,15 @@ export default function AdminPage() {
           <UserManager
             users={users}
             generated={generated}
-            onGenerated={setGenerated}
+            onGenerated={updateGenerated}
             onRefresh={() => void fetchUsers()}
-            onDeleteUser={(userId) =>
-              setGenerated((prev) =>
-                prev.filter((u) => {
-                  const match = users.find((ur) => ur.id === userId);
-                  return !match || u.username !== match.username;
-                }),
-              )
-            }
+            onDeleteUser={(userId) => {
+              const match = users.find((u) => u.id === userId);
+              if (match)
+                updateGenerated(
+                  generated.filter((g) => g.username !== match.username),
+                );
+            }}
           />
         )}
         {activeTab === "stocks" && (
