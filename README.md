@@ -639,7 +639,6 @@ npm run dev
 ║              BUILT BY                                    ║
 ║                                                          ║
 ║   Talha Ahmad                                            ║
-║   Finance Society — University Competition Platform      ║
 ║                                                          ║
 ║   Stack assembled in the dark with too much caffeine.    ║
 ║   If it breaks during the competition — RESET exists.    ║
