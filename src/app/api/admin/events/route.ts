@@ -2,7 +2,6 @@ import { type NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/services/auth.service";
 import { createServiceClient } from "@/lib/supabase/server";
-import { initGameState } from "@/lib/services/game.service";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AuthUser } from "@/lib/supabase/database.types";
 
@@ -85,13 +84,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const supabase = (await createServiceClient()) as unknown as SupabaseClient;
 
+    // Create event
     const { data, error } = await supabase
       .from("events")
       .insert({
         name,
         starting_balance,
         total_rounds,
-        status: "IDLE",
+        status: "READY",
         current_round: 0,
         created_by: auth.user?.id,
       })
@@ -107,24 +107,38 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const newEvent = data as unknown as EventRow;
 
-    await initGameState(newEvent.id, total_rounds);
+    // Insert game_state row
+    const { error: gsError } = await supabase.from("game_state").insert({
+      event_id: newEvent.id,
+      status: "READY",
+      current_round: 0,
+      timer_remaining: 0,
+      paused_at: null,
+      last_updated: new Date().toISOString(),
+    });
 
+    if (gsError) {
+      console.error("[events] game_state insert failed:", gsError.message);
+      // Rollback event
+      await supabase.from("events").delete().eq("id", newEvent.id);
+      return NextResponse.json(
+        { error: "Failed to init game state: " + gsError.message },
+        { status: 500 },
+      );
+    }
+
+    // Create rounds
     const rounds = Array.from({ length: total_rounds }, (_, i) => ({
       event_id: newEvent.id,
       round_number: i + 1,
       duration_seconds: round_duration_seconds,
       status: "pending",
     }));
-    await supabase.from("rounds").insert(rounds);
 
-    await supabase
-      .from("game_state")
-      .update({ status: "READY" })
-      .eq("event_id", newEvent.id);
-    await supabase
-      .from("events")
-      .update({ status: "READY" })
-      .eq("id", newEvent.id);
+    const { error: roundsError } = await supabase.from("rounds").insert(rounds);
+    if (roundsError) {
+      console.error("[events] rounds insert failed:", roundsError.message);
+    }
 
     return NextResponse.json({ ...newEvent, status: "READY" }, { status: 201 });
   } catch (err) {
@@ -151,23 +165,18 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     const { eventId } = body;
     const supabase = (await createServiceClient()) as unknown as SupabaseClient;
 
-    // Get all portfolios for this event (needed to delete holdings)
     const { data: portfolios } = await supabase
       .from("portfolios")
       .select("id")
       .eq("event_id", eventId);
-
     const portfolioIds = (portfolios ?? []).map((p: { id: string }) => p.id);
 
-    // Get all stocks for this event (needed to delete stock_prices)
     const { data: stocks } = await supabase
       .from("stocks")
       .select("id")
       .eq("event_id", eventId);
-
     const stockIds = (stocks ?? []).map((s: { id: string }) => s.id);
 
-    // Delete in correct dependency order
     if (portfolioIds.length > 0) {
       await supabase.from("holdings").delete().in("portfolio_id", portfolioIds);
       await supabase.from("trades").delete().in("portfolio_id", portfolioIds);

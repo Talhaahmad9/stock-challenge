@@ -115,7 +115,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           );
         const supabase =
           (await createServiceClient()) as unknown as SupabaseClient;
-        // Delete related portfolio data first
         const { data: portfolios } = await supabase
           .from("portfolios")
           .select("id")
@@ -134,7 +133,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             .in("portfolio_id", portfolioIds);
           await supabase.from("portfolios").delete().in("id", portfolioIds);
         }
-        await supabase.from("users").delete().eq("id", userId);
+        const { error: delError } = await supabase
+          .from("users")
+          .delete()
+          .eq("id", userId);
+        if (delError) {
+          console.error("[delete-user] failed:", delError.message);
+          return NextResponse.json(
+            { error: delError.message },
+            { status: 500 },
+          );
+        }
         return NextResponse.json({ success: true });
       }
 
