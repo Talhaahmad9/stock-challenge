@@ -81,33 +81,6 @@ export default function GameControls({
             )}
           </button>
           <button
-            disabled={status !== "ROUND_ACTIVE" || !!actionLoading}
-            onClick={() =>
-              onAction("END_ROUND", { roundNumber: currentRound, totalRounds })
-            }
-            className={btn}
-          >
-            {actionLoading === "END_ROUND" ? (
-              <Spinner size="sm" />
-            ) : (
-              "END ROUND"
-            )}
-          </button>
-          <button
-            disabled={status !== "ROUND_ACTIVE" || !!actionLoading}
-            onClick={() => onAction("PAUSE")}
-            className={btn}
-          >
-            {actionLoading === "PAUSE" ? <Spinner size="sm" /> : "PAUSE"}
-          </button>
-          <button
-            disabled={status !== "PAUSED" || !!actionLoading}
-            onClick={() => onAction("RESUME")}
-            className={btn}
-          >
-            {actionLoading === "RESUME" ? <Spinner size="sm" /> : "RESUME"}
-          </button>
-          <button
             disabled={!!actionLoading}
             onClick={promptReset}
             className="border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs px-3 py-2 rounded tracking-widest uppercase disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"

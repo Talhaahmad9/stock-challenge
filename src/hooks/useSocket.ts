@@ -3,7 +3,10 @@ import { io, type Socket } from "socket.io-client";
 import { useAuthStore } from "@/store/authStore";
 import { useGameStore } from "@/store/gameStore";
 import { usePortfolioStore } from "@/store/portfolioStore";
-import type { HoldingWithStock } from "@/lib/supabase/database.types";
+import type {
+  HoldingWithStock,
+  GameState,
+} from "@/lib/supabase/database.types";
 
 // FIX: token must come from API — httpOnly cookies are not readable by JS
 async function fetchSocketToken(): Promise<string> {
@@ -79,11 +82,22 @@ export default function useSocket(eventId: string | null) {
           prices: Record<string, number>;
           caseStudy: string | null;
         }) => {
-          updateStatus("ROUND_ACTIVE");
+          // Update store immediately from socket payload
           updateRound(payload.roundNumber);
           updateTimer(payload.durationSeconds);
-          // FIX: re-fetch portfolio when round starts so stocks + balance refresh
-          if (eventId) void fetchPortfolio(eventId);
+          updateStatus("ROUND_ACTIVE");
+          // Also fetch fresh game state from DB (cache-busted) to stay in sync
+          if (eventId) {
+            void fetch(
+              "/api/game/state?eventId=" + eventId + "&t=" + Date.now(),
+            )
+              .then((r) => r.json())
+              .then((data: unknown) =>
+                useGameStore.getState().setGameState(data as GameState),
+              )
+              .catch(() => {});
+            void fetchPortfolio(eventId);
+          }
         },
       );
 
