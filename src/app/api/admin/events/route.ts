@@ -165,23 +165,26 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     const { eventId } = body;
     const supabase = (await createServiceClient()) as unknown as SupabaseClient;
 
+    // Delete in correct FK dependency order
+    await supabase.from("admin_actions").delete().eq("event_id", eventId);
+    await supabase.from("trades").delete().eq("event_id", eventId);
+
     const { data: portfolios } = await supabase
       .from("portfolios")
       .select("id")
       .eq("event_id", eventId);
     const portfolioIds = (portfolios ?? []).map((p: { id: string }) => p.id);
 
+    if (portfolioIds.length > 0) {
+      await supabase.from("holdings").delete().in("portfolio_id", portfolioIds);
+      await supabase.from("portfolios").delete().in("id", portfolioIds);
+    }
+
     const { data: stocks } = await supabase
       .from("stocks")
       .select("id")
       .eq("event_id", eventId);
     const stockIds = (stocks ?? []).map((s: { id: string }) => s.id);
-
-    if (portfolioIds.length > 0) {
-      await supabase.from("holdings").delete().in("portfolio_id", portfolioIds);
-      await supabase.from("trades").delete().in("portfolio_id", portfolioIds);
-      await supabase.from("portfolios").delete().in("id", portfolioIds);
-    }
 
     if (stockIds.length > 0) {
       await supabase.from("stock_prices").delete().in("stock_id", stockIds);

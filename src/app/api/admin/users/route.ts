@@ -115,6 +115,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           );
         const supabase =
           (await createServiceClient()) as unknown as SupabaseClient;
+        // Delete in FK dependency order
+        await supabase.from("sessions").delete().eq("user_id", userId);
+        await supabase.from("trades").delete().eq("user_id", userId);
         const { data: portfolios } = await supabase
           .from("portfolios")
           .select("id")
@@ -125,10 +128,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (portfolioIds.length > 0) {
           await supabase
             .from("holdings")
-            .delete()
-            .in("portfolio_id", portfolioIds);
-          await supabase
-            .from("trades")
             .delete()
             .in("portfolio_id", portfolioIds);
           await supabase.from("portfolios").delete().in("id", portfolioIds);
@@ -156,6 +155,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           .eq("role", "participant");
         const userIds = (allUsers ?? []).map((u: { id: string }) => u.id);
         if (userIds.length > 0) {
+          await supabase.from("sessions").delete().in("user_id", userIds);
+          await supabase.from("trades").delete().in("user_id", userIds);
           const { data: portfolios } = await supabase
             .from("portfolios")
             .select("id")
@@ -166,10 +167,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           if (portfolioIds.length > 0) {
             await supabase
               .from("holdings")
-              .delete()
-              .in("portfolio_id", portfolioIds);
-            await supabase
-              .from("trades")
               .delete()
               .in("portfolio_id", portfolioIds);
             await supabase.from("portfolios").delete().in("id", portfolioIds);
