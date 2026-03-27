@@ -155,14 +155,15 @@ export default function useSocket(eventId: string | null) {
 
       function handleStateUpdate(payload: GameStateUpdatePayload) {
         if (payload.eventId !== eventId) return;
+        const previousStatus = useGameStore.getState().gameState?.status;
         updateStatus(payload.status);
         if (typeof payload.currentRound === "number") {
           updateRound(payload.currentRound);
         }
         if (typeof payload.timerRemaining === "number") {
           updateTimer(payload.timerRemaining);
-          // Re-anchor local elapsed timer on resume/active updates.
-          if (payload.status === "ROUND_ACTIVE") {
+          // Re-anchor local elapsed timer only when resuming from PAUSED.
+          if (payload.status === "ROUND_ACTIVE" && previousStatus === "PAUSED") {
             startRound(Date.now(), payload.timerRemaining);
           }
         }
@@ -173,10 +174,20 @@ export default function useSocket(eventId: string | null) {
       socket.on("GAME_STATE_UPDATED", handleStateUpdate);
 
       // Backward compatibility with legacy names.
-      socket.on("GAME_PAUSE", () => updateStatus("PAUSED"));
-      socket.on("GAME_RESUME", () => {
-        const state = useGameStore.getState();
-        const remaining = state.gameState?.timerRemaining ?? 0;
+      socket.on("GAME_PAUSE", (payload?: Partial<GameStateUpdatePayload>) => {
+        if (payload?.eventId && payload.eventId !== eventId) return;
+        if (typeof payload?.timerRemaining === "number") {
+          updateTimer(payload.timerRemaining);
+        }
+        updateStatus("PAUSED");
+      });
+
+      socket.on("GAME_RESUME", (payload?: Partial<GameStateUpdatePayload>) => {
+        if (payload?.eventId && payload.eventId !== eventId) return;
+        const remaining =
+          typeof payload?.timerRemaining === "number"
+            ? payload.timerRemaining
+            : useGameStore.getState().gameState?.timerRemaining ?? 0;
         if (remaining > 0) {
           startRound(Date.now(), remaining);
         }

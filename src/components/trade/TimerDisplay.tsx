@@ -1,7 +1,7 @@
 "use client";
 
 import { useGameStore } from "@/store/gameStore";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface Props {
   status: string;
@@ -24,50 +24,57 @@ export default function TimerDisplay({
   activeEventId,
 }: Props) {
   const roundStartTime = useGameStore((store) => store.roundStartTime);
-  const roundDurationSeconds = useGameStore((store) => store.roundDurationSeconds);
+  const roundDurationSeconds = useGameStore(
+    (store) => store.roundDurationSeconds,
+  );
   const persistedTimerRemaining = useGameStore(
     (store) => store.gameState?.timerRemaining ?? 0,
   );
   const setGameState = useGameStore((store) => store.setGameState);
-  const [displayTime, setDisplayTime] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const roundEndFetchTriggeredRef = useRef(false);
 
-  // Calculate timer based on elapsed time from round start
+  // Tick local clock while active; displayTime is derived from state + clock.
   useEffect(() => {
-    if (status !== "ROUND_ACTIVE") {
-      setDisplayTime(persistedTimerRemaining);
-      return;
-    }
-
-    const updateTimer = () => {
-      if (!roundStartTime || roundDurationSeconds === 0) {
-        setDisplayTime(persistedTimerRemaining);
-        return;
-      }
-
-      const elapsedMs = Date.now() - roundStartTime;
-      const remainingMs = roundDurationSeconds * 1000 - elapsedMs;
-      const remainingSeconds = remainingMs / 1000;
-
-      setDisplayTime(Math.max(0, remainingSeconds));
-    };
-
-    // Update immediately and then every 100ms for smooth display
-    updateTimer();
-    const interval = setInterval(updateTimer, 100);
+    if (status !== "ROUND_ACTIVE") return;
+    const interval = setInterval(() => setNowMs(Date.now()), 100);
 
     return () => clearInterval(interval);
+  }, [status]);
+
+  const displayTime = useMemo(() => {
+    if (status === "PAUSED") return persistedTimerRemaining;
+    if (status !== "ROUND_ACTIVE") return 0;
+    if (!roundStartTime || roundDurationSeconds === 0) {
+      return persistedTimerRemaining;
+    }
+    const remainingMs = roundStartTime + roundDurationSeconds * 1000 - nowMs;
+    return Math.max(0, remainingMs / 1000);
   }, [
     status,
+    persistedTimerRemaining,
     roundStartTime,
     roundDurationSeconds,
-    persistedTimerRemaining,
+    nowMs,
   ]);
 
   // Auto-fetch game state if timer hit 0 but status is still ROUND_ACTIVE
   // This handles the case where ROUND_END socket event is missed
   useEffect(() => {
-    if (displayTime <= 0 && status === "ROUND_ACTIVE" && activeEventId) {
-      console.log("[TimerDisplay] Timer hit 0 but status is still ROUND_ACTIVE, fetching fresh game state");
+    if (status !== "ROUND_ACTIVE") {
+      roundEndFetchTriggeredRef.current = false;
+      return;
+    }
+
+    if (
+      displayTime <= 0 &&
+      activeEventId &&
+      !roundEndFetchTriggeredRef.current
+    ) {
+      roundEndFetchTriggeredRef.current = true;
+      console.log(
+        "[TimerDisplay] Timer hit 0 but status is still ROUND_ACTIVE, fetching fresh game state",
+      );
       void (async () => {
         try {
           const res = await fetch(`/api/game/state?eventId=${activeEventId}`);

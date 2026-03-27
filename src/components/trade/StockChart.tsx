@@ -20,6 +20,7 @@ interface ChartPoint {
 interface Props {
   eventId: string;
   currentRound: number;
+  status: string;
 }
 
 // Custom tooltip styled to match the design system
@@ -62,13 +63,15 @@ function CyberpunkTooltip({
   );
 }
 
-export default function StockChart({ eventId, currentRound }: Props) {
+export default function StockChart({ eventId, currentRound, status }: Props) {
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchChart = useCallback(async () => {
     try {
-      const res = await fetch(`/api/game/charts?eventId=${eventId}`);
+      const res = await fetch(`/api/game/charts?eventId=${eventId}`, {
+        cache: "no-store",
+      });
       if (!res.ok) return;
       const data = (await res.json()) as { series: PnlPoint[] };
 
@@ -99,7 +102,7 @@ export default function StockChart({ eventId, currentRound }: Props) {
 
   useEffect(() => {
     void fetchChart();
-  }, [fetchChart, currentRound]); // refetch when round changes
+  }, [fetchChart, currentRound, status]); // refetch when round or status changes
 
   if (isLoading)
     return (

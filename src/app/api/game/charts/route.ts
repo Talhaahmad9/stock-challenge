@@ -115,6 +115,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const holdings = new Map<string, { quantity: number; avgBuyPrice: number }>();
+    const lastKnownPriceByStock = new Map<string, number>();
     let cash = startingBalance;
 
     const series = roundRows.map((round) => {
@@ -153,9 +154,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
 
       const roundPrices = pricesByRound.get(round.id) ?? new Map<string, number>();
+      for (const [stockId, price] of roundPrices.entries()) {
+        lastKnownPriceByStock.set(stockId, price);
+      }
       let holdingsValue = 0;
       for (const [stockId, position] of holdings.entries()) {
-        const markPrice = roundPrices.get(stockId) ?? position.avgBuyPrice;
+        const markPrice =
+          roundPrices.get(stockId) ??
+          lastKnownPriceByStock.get(stockId) ??
+          position.avgBuyPrice;
         holdingsValue += position.quantity * markPrice;
       }
 

@@ -35,8 +35,19 @@ export const useGameStore = create<GameStore>((set) => ({
     set((store) =>
       store.gameState
         ? {
-            gameState: { ...store.gameState, status },
+            gameState: {
+              ...store.gameState,
+              status,
+              timerRemaining:
+                status === "ROUND_END" || status === "GAME_END"
+                  ? 0
+                  : store.gameState.timerRemaining,
+            },
             tradingEnabled: status === "ROUND_ACTIVE",
+            roundStartTime:
+              status === "ROUND_ACTIVE" ? store.roundStartTime : null,
+            roundDurationSeconds:
+              status === "ROUND_ACTIVE" ? store.roundDurationSeconds : 0,
           }
         : { tradingEnabled: false },
     ),

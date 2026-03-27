@@ -46,9 +46,9 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "events", label: "EVENTS" },
 ];
 
-function loadGeneratedFromSession(): { username: string; password: string }[] {
+function loadGeneratedFromStorage(): { username: string; password: string }[] {
   try {
-    const saved = sessionStorage.getItem("generated-users");
+    const saved = localStorage.getItem("generated-users");
     return saved
       ? (JSON.parse(saved) as { username: string; password: string }[])
       : [];
@@ -73,12 +73,12 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [generated, setGenerated] = useState<
     { username: string; password: string }[]
-  >(loadGeneratedFromSession);
+  >(loadGeneratedFromStorage);
 
   function updateGenerated(list: { username: string; password: string }[]) {
     setGenerated(list);
     try {
-      sessionStorage.setItem("generated-users", JSON.stringify(list));
+      localStorage.setItem("generated-users", JSON.stringify(list));
     } catch {}
   }
 

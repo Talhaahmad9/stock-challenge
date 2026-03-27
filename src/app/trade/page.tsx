@@ -267,6 +267,7 @@ export default function TradePage() {
               <StockChart
                 eventId={activeEventId}
                 currentRound={currentRound}
+                status={status ?? ""}
               />
             )}
           </div>

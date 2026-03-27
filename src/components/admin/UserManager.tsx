@@ -46,7 +46,20 @@ export default function UserManager({
       const data = (await res.json()) as {
         created: { username: string; password: string }[];
       };
-      onGenerated(data.created ?? []);
+      const created = data.created ?? [];
+      const merged = new Map<string, string>();
+      for (const row of generated) {
+        merged.set(row.username, row.password);
+      }
+      for (const row of created) {
+        merged.set(row.username, row.password);
+      }
+      onGenerated(
+        Array.from(merged.entries()).map(([username, password]) => ({
+          username,
+          password,
+        })),
+      );
       setShowPasswords(true);
       onRefresh();
     } catch {
@@ -69,6 +82,26 @@ export default function UserManager({
         error?: string;
       };
       if (data.newPassword) {
+        const resetUser = users.find((u) => u.id === userId);
+        if (resetUser) {
+          const existing = generated.find((u) => u.username === resetUser.username);
+          if (existing) {
+            onGenerated(
+              generated.map((u) =>
+                u.username === resetUser.username
+                  ? { ...u, password: data.newPassword as string }
+                  : u,
+              ),
+            );
+          } else {
+            onGenerated([
+              ...generated,
+              { username: resetUser.username, password: data.newPassword },
+            ]);
+          }
+          setShowPasswords(true);
+        }
+
         alert({
           title: "PASSWORD RESET",
           message: `New password: ${data.newPassword}`,
