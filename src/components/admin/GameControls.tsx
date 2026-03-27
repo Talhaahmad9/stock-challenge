@@ -67,6 +67,7 @@ export default function GameControls({
           <button
             disabled={
               (status !== "RUNNING" && status !== "ROUND_END") ||
+              currentRound >= totalRounds ||
               !!actionLoading
             }
             onClick={() =>
@@ -80,6 +81,28 @@ export default function GameControls({
               "START ROUND"
             )}
           </button>
+          {(status === "ROUND_ACTIVE" || status === "RUNNING") && (
+            <button
+              disabled={!!actionLoading || !selectedEventId}
+              onClick={() => onAction("PAUSE")}
+              className={btn}
+            >
+              {actionLoading === "PAUSE" ? <Spinner size="sm" /> : "PAUSE"}
+            </button>
+          )}
+          {status === "PAUSED" && (
+            <button
+              disabled={!!actionLoading || !selectedEventId}
+              onClick={() => onAction("RESUME")}
+              className={btn}
+            >
+              {actionLoading === "RESUME" ? (
+                <Spinner size="sm" />
+              ) : (
+                "RESUME"
+              )}
+            </button>
+          )}
           <button
             disabled={!!actionLoading}
             onClick={promptReset}

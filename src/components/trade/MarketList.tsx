@@ -9,6 +9,7 @@ import type { TradeType } from "@/lib/supabase/database.types";
 interface Props {
   stocks: StockWithPrice[];
   holdings: HoldingWithStock[];
+  tradingEnabled: boolean;
   onTrade: (
     stockId: string,
     symbol: string,
@@ -27,7 +28,12 @@ function fmt(v: number) {
   );
 }
 
-export default function MarketList({ stocks, holdings, onTrade }: Props) {
+export default function MarketList({
+  stocks,
+  holdings,
+  tradingEnabled,
+  onTrade,
+}: Props) {
   function getHolding(stockId: string) {
     return holdings.find((h) => h.id === stockId) ?? null;
   }
@@ -71,7 +77,8 @@ export default function MarketList({ stocks, holdings, onTrade }: Props) {
                     onClick={() =>
                       onTrade(stock.id, stock.symbol, stock.currentPrice, "BUY")
                     }
-                    className="bg-green-500 hover:bg-green-400 text-black font-bold text-xs px-3 py-1 rounded"
+                    disabled={!tradingEnabled}
+                    className="bg-green-500 hover:bg-green-400 text-black font-bold text-xs px-3 py-1 rounded disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     BUY
                   </button>
@@ -84,7 +91,7 @@ export default function MarketList({ stocks, holdings, onTrade }: Props) {
                         "SELL",
                       )
                     }
-                    disabled={!holding}
+                    disabled={!holding || !tradingEnabled}
                     className="border border-red-500 text-red-400 hover:bg-red-500/10 text-xs px-3 py-1 rounded disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     SELL

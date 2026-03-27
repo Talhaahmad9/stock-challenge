@@ -4,6 +4,26 @@ import { verifySession } from "@/lib/services/auth.service";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+interface RoundRow {
+  id: string;
+  round_number: number;
+}
+
+interface TradeRow {
+  stock_id: string;
+  round_id: string;
+  type: "BUY" | "SELL";
+  quantity: number;
+  price: number;
+  executed_at: string;
+}
+
+interface StockPriceRow {
+  stock_id: string;
+  round_id: string;
+  price: number;
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const cookieStore = await cookies();
   const token = cookieStore.get("session_token")?.value;
@@ -30,21 +50,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const currentRound =
       (gsData as { current_round: number } | null)?.current_round ?? 0;
-    if (currentRound === 0)
-      return NextResponse.json({ stocks: [], rounds: [] });
+    if (currentRound === 0) {
+      return NextResponse.json({ series: [] });
+    }
 
-    // Get all stocks for this event
-    const { data: stocks } = await supabase
-      .from("stocks")
-      .select("id, symbol, name")
-      .eq("event_id", eventId);
+    const { data: eventData, error: eventError } = await supabase
+      .from("events")
+      .select("starting_balance")
+      .eq("id", eventId)
+      .single();
 
-    if (!stocks || stocks.length === 0)
-      return NextResponse.json({ stocks: [], rounds: [] });
+    if (eventError || !eventData) {
+      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    }
 
-    const stockIds = (
-      stocks as { id: string; symbol: string; name: string }[]
-    ).map((s) => s.id);
+    const startingBalance = (eventData as { starting_balance: number })
+      .starting_balance;
 
     // Get rounds up to current round only
     const { data: rounds } = await supabase
@@ -54,49 +75,99 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       .lte("round_number", currentRound)
       .order("round_number", { ascending: true });
 
-    if (!rounds || rounds.length === 0)
-      return NextResponse.json({ stocks: [], rounds: [] });
+    if (!rounds || rounds.length === 0) {
+      return NextResponse.json({ series: [] });
+    }
 
-    const roundIds = (rounds as { id: string; round_number: number }[]).map(
-      (r) => r.id,
-    );
+    const roundRows = rounds as RoundRow[];
+    const roundIds = roundRows.map((r) => r.id);
 
-    // Get all prices for these stocks and rounds
+    const { data: trades } = await supabase
+      .from("trades")
+      .select("stock_id, round_id, type, quantity, price, executed_at")
+      .eq("event_id", eventId)
+      .eq("user_id", user.id)
+      .in("round_id", roundIds);
+
     const { data: prices } = await supabase
       .from("stock_prices")
       .select("stock_id, round_id, price")
-      .in("stock_id", stockIds)
       .in("round_id", roundIds);
 
-    // Build round number lookup
-    const roundNumberMap = Object.fromEntries(
-      (rounds as { id: string; round_number: number }[]).map((r) => [
-        r.id,
-        r.round_number,
-      ]),
-    );
+    const tradesByRound = new Map<string, TradeRow[]>();
+    for (const trade of (trades as TradeRow[] | null) ?? []) {
+      const current = tradesByRound.get(trade.round_id) ?? [];
+      current.push(trade);
+      tradesByRound.set(trade.round_id, current);
+    }
+    for (const [roundId, roundTrades] of tradesByRound.entries()) {
+      roundTrades.sort((a, b) =>
+        a.executed_at.localeCompare(b.executed_at),
+      );
+      tradesByRound.set(roundId, roundTrades);
+    }
 
-    // Build chart data: { symbol, data: [{ round: 1, price: 45 }, ...] }[]
-    const chartData = (stocks as { id: string; symbol: string; name: string }[])
-      .map((stock) => {
-        const stockPrices = (
-          (prices as { stock_id: string; round_id: string; price: number }[]) ??
-          []
-        )
-          .filter((p) => p.stock_id === stock.id)
-          .map((p) => ({ round: roundNumberMap[p.round_id], price: p.price }))
-          .filter((p) => p.round !== undefined)
-          .sort((a, b) => a.round - b.round);
+    const pricesByRound = new Map<string, Map<string, number>>();
+    for (const priceRow of (prices as StockPriceRow[] | null) ?? []) {
+      const current = pricesByRound.get(priceRow.round_id) ?? new Map();
+      current.set(priceRow.stock_id, priceRow.price);
+      pricesByRound.set(priceRow.round_id, current);
+    }
 
-        return { symbol: stock.symbol, name: stock.name, data: stockPrices };
-      })
-      .filter((s) => s.data.length > 0);
+    const holdings = new Map<string, { quantity: number; avgBuyPrice: number }>();
+    let cash = startingBalance;
 
-    const roundNumbers = (rounds as { id: string; round_number: number }[]).map(
-      (r) => r.round_number,
-    );
+    const series = roundRows.map((round) => {
+      const roundTrades = tradesByRound.get(round.id) ?? [];
+      for (const trade of roundTrades) {
+        const existing = holdings.get(trade.stock_id) ?? {
+          quantity: 0,
+          avgBuyPrice: 0,
+        };
 
-    return NextResponse.json({ stocks: chartData, rounds: roundNumbers });
+        if (trade.type === "BUY") {
+          const newQty = existing.quantity + trade.quantity;
+          const newAvg =
+            newQty === 0
+              ? 0
+              : (existing.quantity * existing.avgBuyPrice +
+                  trade.quantity * trade.price) /
+                newQty;
+          cash -= trade.quantity * trade.price;
+          holdings.set(trade.stock_id, {
+            quantity: newQty,
+            avgBuyPrice: newAvg,
+          });
+        } else {
+          cash += trade.quantity * trade.price;
+          const remainingQty = Math.max(0, existing.quantity - trade.quantity);
+          if (remainingQty === 0) {
+            holdings.delete(trade.stock_id);
+          } else {
+            holdings.set(trade.stock_id, {
+              quantity: remainingQty,
+              avgBuyPrice: existing.avgBuyPrice,
+            });
+          }
+        }
+      }
+
+      const roundPrices = pricesByRound.get(round.id) ?? new Map<string, number>();
+      let holdingsValue = 0;
+      for (const [stockId, position] of holdings.entries()) {
+        const markPrice = roundPrices.get(stockId) ?? position.avgBuyPrice;
+        holdingsValue += position.quantity * markPrice;
+      }
+
+      const totalValue = cash + holdingsValue;
+      return {
+        round: round.round_number,
+        pnl: totalValue - startingBalance,
+        totalValue,
+      };
+    });
+
+    return NextResponse.json({ series });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Unexpected error" },

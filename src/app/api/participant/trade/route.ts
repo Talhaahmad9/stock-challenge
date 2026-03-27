@@ -92,8 +92,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   });
 
   void socketPost("/internal/broadcast", {
+    eventId,
     event: "TRADE_LOG",
     data: {
+      eventId,
       userId: user.id,
       username: user.username,
       timestamp: new Date().toISOString(),

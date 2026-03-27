@@ -9,7 +9,6 @@ interface GameState {
   status: string;
   currentRound: number;
   totalRounds: number;
-  timerRemaining: number;
 }
 
 interface Props {
@@ -17,12 +16,6 @@ interface Props {
   selectedEventId: string | null;
   gameState: GameState | null;
   onSelect: (id: string | null) => void;
-}
-
-function formatTimer(s: number) {
-  return `${Math.floor(s / 60)
-    .toString()
-    .padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
 function statusColor(status: string) {
@@ -78,9 +71,6 @@ export default function EventSelector({
             </span>
             <span className="text-sm text-green-700 tracking-widest">
               ROUND {gameState.currentRound}/{gameState.totalRounds}
-            </span>
-            <span className="text-sm tabular-nums text-green-400">
-              {formatTimer(gameState.timerRemaining)}
             </span>
           </div>
         </div>

@@ -8,7 +8,7 @@ const VALID_TRANSITIONS: Record<EventStatus, EventStatus[]> = {
   IDLE: ["SETUP"],
   SETUP: ["READY"],
   READY: ["RUNNING"],
-  RUNNING: ["ROUND_ACTIVE"],
+  RUNNING: ["ROUND_ACTIVE", "PAUSED"],
   ROUND_ACTIVE: ["ROUND_END", "PAUSED"],
   ROUND_END: ["ROUND_ACTIVE", "GAME_END"],
   PAUSED: ["ROUND_ACTIVE", "RUNNING"],
@@ -122,7 +122,6 @@ export async function getGameState(eventId: string): Promise<GameState | null> {
 
 export async function initGameState(
   eventId: string,
-  _totalRounds: number,
 ): Result {
   const supabase = await db();
 
@@ -239,20 +238,7 @@ export async function endRound(
 // FIX: check current state first — can pause from ROUND_ACTIVE or RUNNING
 
 export async function pauseGame(eventId: string): Result {
-  const { status: currentStatus, error: fetchError } =
-    await fetchCurrentStatus(eventId);
-
-  if (fetchError) return { success: false, error: fetchError };
-
-  // Must be in a pausable state
-  if (currentStatus !== "ROUND_ACTIVE" && currentStatus !== "RUNNING") {
-    return {
-      success: false,
-      error: `Cannot pause from state: ${currentStatus}`,
-    };
-  }
-
-  const transition = await applyTransition(eventId, "PAUSED");
+  const transition = await transitionState(eventId, "PAUSED");
   if (!transition.success) return transition;
 
   const supabase = await db();
@@ -270,10 +256,26 @@ export async function pauseGame(eventId: string): Result {
 // ─── 7. resumeGame ───────────────────────────────────────────────────────────
 
 export async function resumeGame(eventId: string): Result {
-  const transition = await transitionState(eventId, "ROUND_ACTIVE");
+  const supabase = await db();
+  const { data, error: stateError } = await supabase
+    .from("game_state")
+    .select("status, current_round")
+    .eq("event_id", eventId)
+    .single();
+
+  if (stateError || !data) {
+    return { success: false, error: stateError?.message ?? "Game state not found" };
+  }
+
+  const state = data as { status: EventStatus; current_round: number };
+  if (state.status !== "PAUSED") {
+    return { success: false, error: `Cannot resume from state: ${state.status}` };
+  }
+
+  const resumeTo: EventStatus = state.current_round > 0 ? "ROUND_ACTIVE" : "RUNNING";
+  const transition = await transitionState(eventId, resumeTo);
   if (!transition.success) return transition;
 
-  const supabase = await db();
   const now = new Date().toISOString();
 
   const { error } = await supabase

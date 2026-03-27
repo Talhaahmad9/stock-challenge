@@ -5,8 +5,40 @@ import { useGameStore } from "@/store/gameStore";
 import { usePortfolioStore } from "@/store/portfolioStore";
 import type {
   HoldingWithStock,
-  GameState,
+  EventStatus,
 } from "@/lib/supabase/database.types";
+
+interface GameStateUpdatePayload {
+  eventId: string;
+  status: EventStatus;
+  timerRemaining: number | null;
+  currentRound: number | null;
+}
+
+interface RoundStartPayload {
+  eventId?: string;
+  roundNumber: number;
+  durationSeconds: number;
+  roundStartTime?: string; // ISO timestamp when round started on server
+  prices: Record<string, number>;
+  caseStudy: string | null;
+}
+
+interface RoundEndPayload {
+  eventId?: string;
+  auto?: boolean;
+  roundNumber?: number;
+}
+
+interface GameStartPayload {
+  eventId?: string;
+  startTime?: string;
+}
+
+interface TimerTickPayload {
+  eventId?: string;
+  remaining: number;
+}
 
 // FIX: token must come from API — httpOnly cookies are not readable by JS
 async function fetchSocketToken(): Promise<string> {
@@ -25,7 +57,7 @@ export default function useSocket(eventId: string | null) {
   const [isConnected, setIsConnectedState] = useState(false);
 
   const user = useAuthStore((s) => s.user);
-  const { setConnected, updateTimer, updateStatus, updateRound } =
+  const { setConnected, startRound, updateStatus, updateRound, updateTimer } =
     useGameStore();
   const { updateAfterTrade, fetchPortfolio } = usePortfolioStore();
 
@@ -49,16 +81,19 @@ export default function useSocket(eventId: string | null) {
       socketRef.current = socket;
 
       socket.on("connect", () => {
+        console.log("[socket] connected, eventId:", eventId);
         if (cancelled) {
           socket.disconnect();
           return;
         }
         setConnected(true);
         setIsConnectedState(true);
-        socket.emit("JOIN_GAME", { userId: user!.id, token });
+        console.log("[socket] emitting JOIN_GAME with eventId:", eventId);
+        socket.emit("JOIN_GAME", { userId: user!.id, token, eventId });
       });
 
       socket.on("disconnect", () => {
+        console.log("[socket] disconnected");
         setConnected(false);
         setIsConnectedState(false);
       });
@@ -69,52 +104,83 @@ export default function useSocket(eventId: string | null) {
       });
 
       socket.on("JOINED", (payload: { userId: string }) => {
-        console.log("[socket] joined game room as", payload.userId);
+        console.log("[socket] JOINED game room as", payload.userId);
       });
 
-      socket.on("GAME_START", () => updateStatus("RUNNING"));
+      socket.on("GAME_START", (payload: GameStartPayload) => {
+        console.log("[socket] GAME_START", { payloadEventId: payload?.eventId, hookEventId: eventId });
+        if (payload?.eventId && payload.eventId !== eventId) return;
+        updateStatus("RUNNING");
+      });
 
       socket.on(
         "ROUND_START",
-        (payload: {
-          roundNumber: number;
-          durationSeconds: number;
-          prices: Record<string, number>;
-          caseStudy: string | null;
-        }) => {
+        (payload: RoundStartPayload) => {
+          console.log("[socket] ROUND_START", { payloadEventId: payload.eventId, hookEventId: eventId, roundNumber: payload.roundNumber, durationSeconds: payload.durationSeconds });
+          if (payload?.eventId && payload.eventId !== eventId) {
+            console.log("[socket] ROUND_START filtered out due to eventId mismatch");
+            return;
+          }
           // Update store immediately from socket payload
           updateRound(payload.roundNumber);
-          updateTimer(payload.durationSeconds);
+          
+          // Start round with timing: use payload.roundStartTime if available, otherwise use now
+          const startTimeMs = payload.roundStartTime ? new Date(payload.roundStartTime).getTime() : Date.now();
+          startRound(startTimeMs, payload.durationSeconds);
+          
           updateStatus("ROUND_ACTIVE");
-          // Also fetch fresh game state from DB (cache-busted) to stay in sync
+          console.log("[socket] ROUND_START status updated to ROUND_ACTIVE");
+          // Refresh participant data for the new round.
           if (eventId) {
-            void fetch(
-              "/api/game/state?eventId=" + eventId + "&t=" + Date.now(),
-            )
-              .then((r) => r.json())
-              .then((data: unknown) =>
-                useGameStore.getState().setGameState(data as GameState),
-              )
-              .catch(() => {});
             void fetchPortfolio(eventId);
           }
         },
       );
 
-      socket.on("ROUND_END", () => {
+      socket.on("ROUND_END", (payload: RoundEndPayload) => {
+        console.log("[socket] ROUND_END", { payloadEventId: payload?.eventId, hookEventId: eventId, auto: payload?.auto });
+        if (payload?.eventId && payload.eventId !== eventId) {
+          console.log("[socket] ROUND_END filtered out due to eventId mismatch");
+          return;
+        }
+        console.log("[socket] ROUND_END updating status to ROUND_END");
         updateStatus("ROUND_END");
         if (eventId) void fetchPortfolio(eventId);
       });
 
-      socket.on("TIMER_TICK", (payload: { remaining: number }) => {
-        updateTimer(payload.remaining);
+      socket.on("TIMER_TICK", () => {
+        // Timer is now calculated client-side based on roundStartTime + elapsed time
+        // This handler is a no-op but kept for backward compatibility
       });
 
-      socket.on("GAME_PAUSE", () => updateStatus("PAUSED"));
+      function handleStateUpdate(payload: GameStateUpdatePayload) {
+        if (payload.eventId !== eventId) return;
+        updateStatus(payload.status);
+        if (typeof payload.currentRound === "number") {
+          updateRound(payload.currentRound);
+        }
+        if (typeof payload.timerRemaining === "number") {
+          updateTimer(payload.timerRemaining);
+          // Re-anchor local elapsed timer on resume/active updates.
+          if (payload.status === "ROUND_ACTIVE") {
+            startRound(Date.now(), payload.timerRemaining);
+          }
+        }
+      }
 
-      socket.on("GAME_RESUME", (payload: { remainingTime: number }) => {
+      socket.on("GAME_PAUSED", handleStateUpdate);
+      socket.on("GAME_RESUMED", handleStateUpdate);
+      socket.on("GAME_STATE_UPDATED", handleStateUpdate);
+
+      // Backward compatibility with legacy names.
+      socket.on("GAME_PAUSE", () => updateStatus("PAUSED"));
+      socket.on("GAME_RESUME", () => {
+        const state = useGameStore.getState();
+        const remaining = state.gameState?.timerRemaining ?? 0;
+        if (remaining > 0) {
+          startRound(Date.now(), remaining);
+        }
         updateStatus("ROUND_ACTIVE");
-        updateTimer(payload.remainingTime);
       });
 
       socket.on("GAME_END", () => {
@@ -143,8 +209,24 @@ export default function useSocket(eventId: string | null) {
 
     void connect();
 
+    // Auto-transition from ROUND_ACTIVE to ROUND_END when timer hits 0
+    // This handles the case where ROUND_END socket event is missed
+    const timerCheckInterval = setInterval(() => {
+      const state = useGameStore.getState();
+      if (state.gameState?.status === "ROUND_ACTIVE" && state.roundStartTime && state.roundDurationSeconds > 0) {
+        const elapsedMs = Date.now() - state.roundStartTime;
+        const remainingMs = state.roundDurationSeconds * 1000 - elapsedMs;
+        
+        if (remainingMs <= 0) {
+          console.log("[socket] Auto-transitioning from ROUND_ACTIVE to ROUND_END (timer hit 0)");
+          updateStatus("ROUND_END");
+        }
+      }
+    }, 500);
+
     return () => {
       cancelled = true;
+      clearInterval(timerCheckInterval);
       socketRef.current?.disconnect();
       socketRef.current = null;
       setConnected(false);

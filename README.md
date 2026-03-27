@@ -530,6 +530,12 @@ Key deployment details:
 - **Disable RLS** on every table
 - `game_state.status` must be a PostgreSQL `enum` type named `event_status`
 - Confirm `createServiceClient` uses `@supabase/supabase-js` directly — not `@supabase/ssr` — to guarantee the service role key bypasses RLS
+- Apply performance migration for leaderboard RPC + indexes:
+
+```sql
+-- Run this file in Supabase SQL editor
+supabase/migrations/20260327_leaderboard_rpc_indexes.sql
+```
 
 ```typescript
 // server.ts — correct pattern

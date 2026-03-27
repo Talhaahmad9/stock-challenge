@@ -1,6 +1,9 @@
 export const EVENTS = {
   // Server → Client
   GAME_START:            'GAME_START',
+  GAME_PAUSED:           'GAME_PAUSED',
+  GAME_RESUMED:          'GAME_RESUMED',
+  GAME_STATE_UPDATED:    'GAME_STATE_UPDATED',
   GAME_PAUSE:            'GAME_PAUSE',
   GAME_RESUME:           'GAME_RESUME',
   GAME_END:              'GAME_END',

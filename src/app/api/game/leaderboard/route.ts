@@ -37,6 +37,16 @@ interface StockPriceRow {
   price: number
 }
 
+interface RpcLeaderboardRow {
+  rank: number
+  username: string
+  total_value: number
+  balance: number
+  portfolio_value: number
+  pnl: number
+  is_current_user: boolean
+}
+
 // ─── Response shape ───────────────────────────────────────────────────────────
 
 export interface LeaderboardEntry {
@@ -47,6 +57,18 @@ export interface LeaderboardEntry {
   portfolioValue: number
   pnl: number
   isCurrentUser: boolean
+}
+
+function normalizeRpcRows(rows: RpcLeaderboardRow[]): LeaderboardEntry[] {
+  return rows.map((row) => ({
+    rank: Number(row.rank),
+    username: row.username,
+    totalValue: Number(row.total_value),
+    balance: Number(row.balance),
+    portfolioValue: Number(row.portfolio_value),
+    pnl: Number(row.pnl),
+    isCurrentUser: row.is_current_user,
+  }))
 }
 
 // ─── GET /api/game/leaderboard?eventId=xxx ────────────────────────────────────
@@ -72,25 +94,51 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const supabase = (await createServiceClient()) as unknown as SupabaseClient
 
-    // 1. Event — get starting balance
-    const { data: eventData, error: eventError } = await supabase
-      .from('events')
-      .select('starting_balance')
-      .eq('id', eventId)
-      .single()
+    // Fast path: use DB-side aggregation if the RPC is available.
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'get_event_leaderboard',
+      {
+        p_event_id: eventId,
+        p_user_id: user.id,
+      },
+    )
 
-    if (eventError || !eventData) {
+    if (!rpcError && Array.isArray(rpcData)) {
+      return NextResponse.json(
+        normalizeRpcRows(rpcData as RpcLeaderboardRow[]),
+        {
+          headers: {
+            'Cache-Control': 'private, max-age=2, stale-while-revalidate=8',
+          },
+        },
+      )
+    }
+
+    const [eventRes, portfoliosRes, gameStateRes] = await Promise.all([
+      supabase
+        .from('events')
+        .select('starting_balance')
+        .eq('id', eventId)
+        .single(),
+      supabase
+        .from('portfolios')
+        .select('id, user_id, balance, users(username)')
+        .eq('event_id', eventId),
+      supabase
+        .from('game_state')
+        .select('current_round')
+        .eq('event_id', eventId)
+        .single(),
+    ])
+
+    if (eventRes.error || !eventRes.data) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
     const { starting_balance: startingBalance } =
-      eventData as unknown as EventRow
+      eventRes.data as unknown as EventRow
 
-    // 2. All portfolios for this event, joined with username
-    const { data: portfoliosData, error: portfoliosError } = await supabase
-      .from('portfolios')
-      .select('id, user_id, balance, users(username)')
-      .eq('event_id', eventId)
+    const portfoliosError = portfoliosRes.error
 
     if (portfoliosError) {
       return NextResponse.json(
@@ -99,10 +147,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       )
     }
 
-    const portfolios = (portfoliosData as unknown as PortfolioWithUser[]) ?? []
+    const portfolios = (portfoliosRes.data as unknown as PortfolioWithUser[]) ?? []
 
     if (portfolios.length === 0) {
-      return NextResponse.json([] as LeaderboardEntry[])
+      return NextResponse.json([] as LeaderboardEntry[], {
+        headers: {
+          'Cache-Control': 'private, max-age=2, stale-while-revalidate=8',
+        },
+      })
     }
 
     const portfolioIds = portfolios.map((p) => p.id)
@@ -125,15 +177,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // 4. Current round's stock prices (best-effort — fall back to avg_buy_price)
     let priceMap: Record<string, number> = {}
 
-    const { data: gsData } = await supabase
-      .from('game_state')
-      .select('current_round')
-      .eq('event_id', eventId)
-      .single()
-
     const currentRound =
-      gsData !== null
-        ? (gsData as unknown as GameStateRow).current_round
+      gameStateRes.data !== null
+        ? (gameStateRes.data as unknown as GameStateRow).current_round
         : 1
 
     // Use the highest round we can find prices for (covers ROUND_END state too)
@@ -199,7 +245,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       entries[i].rank = rank
     }
 
-    return NextResponse.json(entries)
+    return NextResponse.json(entries, {
+      headers: {
+        'Cache-Control': 'private, max-age=2, stale-while-revalidate=8',
+      },
+    })
   } catch (err) {
     const message =
       err instanceof Error ? err.message : 'Internal server error'

@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifySession } from "@/lib/services/auth.service";
 import {
+  getGameState,
   transitionState,
   startRound,
   endRound,
@@ -18,7 +19,7 @@ type AdminCheck =
   | { user: AuthUser; error?: never; status?: never }
   | { user?: never; error: string; status: number };
 
-async function requireAdmin(_request: NextRequest): Promise<AdminCheck> {
+async function requireAdmin(): Promise<AdminCheck> {
   const cookieStore = await cookies();
   const token = cookieStore.get("session_token")?.value;
   if (!token) return { error: "Not authenticated", status: 401 };
@@ -29,13 +30,17 @@ async function requireAdmin(_request: NextRequest): Promise<AdminCheck> {
 }
 
 // Notify socket server to broadcast an event to all game participants
-async function socketBroadcast(event: string, data: unknown): Promise<void> {
+async function socketBroadcast(
+  event: string,
+  data: unknown,
+  eventId?: string,
+): Promise<void> {
   const socketUrl = process.env.SOCKET_SERVER_URL ?? "http://localhost:4000";
   try {
     await fetch(`${socketUrl}/internal/broadcast`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event, data }),
+      body: JSON.stringify({ event, data, eventId }),
     });
   } catch (err) {
     console.warn("[admin/game] socket broadcast failed:", err);
@@ -44,7 +49,7 @@ async function socketBroadcast(event: string, data: unknown): Promise<void> {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const auth = await requireAdmin(request);
+  const auth = await requireAdmin();
   if (auth.error) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -99,10 +104,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const result = await transitionState(eventId, "RUNNING");
         if (!result.success)
           return NextResponse.json({ error: result.error }, { status: 400 });
-        await socketBroadcast("GAME_START", {
+        await socketBroadcast(
+          "GAME_START",
+          {
+            eventId,
+            startTime: new Date().toISOString(),
+          },
           eventId,
-          startTime: new Date().toISOString(),
-        });
+        );
         return NextResponse.json(result);
       }
 
@@ -173,12 +182,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
 
         // Auto-broadcast ROUND_START to all participants
-        await socketBroadcast("ROUND_START", {
-          roundNumber,
-          durationSeconds: timerResult.durationSeconds ?? 300,
-          prices,
-          caseStudy: null,
-        });
+        await socketBroadcast(
+          "ROUND_START",
+          {
+            eventId,
+            roundNumber,
+            roundStartTime: new Date().toISOString(),
+            durationSeconds: timerResult.durationSeconds ?? 300,
+            prices,
+            caseStudy: null,
+          },
+          eventId,
+        );
 
         return NextResponse.json({
           success: true,
@@ -196,7 +211,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const result = await endRound(eventId, roundNumber, totalRounds);
         if (!result.success)
           return NextResponse.json({ error: result.error }, { status: 400 });
-        await socketBroadcast("ROUND_END", { roundNumber });
+        await socketBroadcast("ROUND_END", { eventId, roundNumber }, eventId);
         return NextResponse.json(result);
       }
 
@@ -204,7 +219,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const result = await pauseGame(eventId);
         if (!result.success)
           return NextResponse.json({ error: result.error }, { status: 400 });
-        await socketBroadcast("GAME_PAUSE", { eventId });
+        const gameState = await getGameState(eventId);
+        await socketBroadcast(
+          "GAME_PAUSED",
+          {
+            eventId,
+            status: "PAUSED",
+            timerRemaining: gameState?.timerRemaining ?? null,
+            currentRound: gameState?.currentRound ?? null,
+          },
+          eventId,
+        );
+        await socketBroadcast(
+          "GAME_STATE_UPDATED",
+          {
+            eventId,
+            status: "PAUSED",
+            timerRemaining: gameState?.timerRemaining ?? null,
+            currentRound: gameState?.currentRound ?? null,
+          },
+          eventId,
+        );
         return NextResponse.json(result);
       }
 
@@ -212,7 +247,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const result = await resumeGame(eventId);
         if (!result.success)
           return NextResponse.json({ error: result.error }, { status: 400 });
-        await socketBroadcast("GAME_RESUME", { eventId });
+        const gameState = await getGameState(eventId);
+        await socketBroadcast(
+          "GAME_RESUMED",
+          {
+            eventId,
+            status: gameState?.status ?? "RUNNING",
+            timerRemaining: gameState?.timerRemaining ?? null,
+            currentRound: gameState?.currentRound ?? null,
+          },
+          eventId,
+        );
+        await socketBroadcast(
+          "GAME_STATE_UPDATED",
+          {
+            eventId,
+            status: gameState?.status ?? "RUNNING",
+            timerRemaining: gameState?.timerRemaining ?? null,
+            currentRound: gameState?.currentRound ?? null,
+          },
+          eventId,
+        );
         return NextResponse.json(result);
       }
 
@@ -220,7 +275,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const result = await resetGame(eventId);
         if (!result.success)
           return NextResponse.json({ error: result.error }, { status: 400 });
-        await socketBroadcast("GAME_RESET", { eventId });
+        await socketBroadcast("GAME_RESET", { eventId }, eventId);
         return NextResponse.json(result);
       }
 

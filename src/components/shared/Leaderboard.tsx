@@ -132,10 +132,26 @@ export default function Leaderboard({
   }, [eventId]);
 
   useEffect(() => {
+    const fetchIfVisible = () => {
+      if (document.visibilityState === "visible") {
+        void fetchLeaderboard();
+      }
+    };
+
     setIsLoading(true);
-    void fetchLeaderboard();
-    const id = setInterval(() => void fetchLeaderboard(), pollInterval);
-    return () => clearInterval(id);
+    fetchIfVisible();
+
+    const id = setInterval(fetchIfVisible, pollInterval);
+    const onVisibilityChange = () => {
+      fetchIfVisible();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [fetchLeaderboard, pollInterval]);
 
   const headerCls =

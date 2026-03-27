@@ -7,6 +7,7 @@ import { useGameStore } from "@/store/gameStore";
 import useSocket from "@/hooks/useSocket";
 import EventSelector from "@/components/admin/EventSelector";
 import GameControls from "@/components/admin/GameControls";
+import TimerDisplay from "@/components/trade/TimerDisplay";
 import UserManager from "@/components/admin/UserManager";
 import StockManager from "@/components/admin/StockManager";
 import TradeMonitor from "@/components/admin/TradeMonitor";
@@ -249,6 +250,14 @@ export default function AdminPage() {
               selectedEventId={selectedEventId}
               onAction={(action, extra) => void sendGameAction(action, extra)}
             />
+            {selectedEventId && (
+              <TimerDisplay
+                status={status}
+                currentRound={currentRound}
+                totalRounds={totalRounds}
+                activeEventId={selectedEventId}
+              />
+            )}
           </>
         )}
         {activeTab === "users" && (

@@ -5,6 +5,7 @@ import http from 'http'
 import { Server, Socket } from 'socket.io'
 import { createClient } from '@supabase/supabase-js'
 import jwt from 'jsonwebtoken'
+import { EVENTS } from './events'
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 
@@ -47,9 +48,58 @@ interface SocketUser {
   role: 'admin' | 'participant'
 }
 
+interface InternalBroadcastBody {
+  event: string
+  data: unknown
+  eventId?: string
+}
+
 declare module 'socket.io' {
   interface SocketData {
     user: SocketUser
+  }
+}
+
+function normalizeEventName(event: string): string {
+  if (event === EVENTS.GAME_PAUSE) return EVENTS.GAME_PAUSED
+  if (event === EVENTS.GAME_RESUME) return EVENTS.GAME_RESUMED
+  return event
+}
+
+function gameRoom(eventId: string): string {
+  return `game:${eventId}`
+}
+
+function eventIdFromData(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null
+  const value = (data as { eventId?: unknown }).eventId
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function leaveAllGameRooms(socket: Socket): void {
+  for (const room of socket.rooms) {
+    if (room.startsWith('game:')) {
+      void socket.leave(room)
+    }
+  }
+}
+
+function emitWithAliases(event: string, data: unknown, eventId?: string): void {
+  const normalizedEvent = normalizeEventName(event)
+  const targetEventId = eventId ?? eventIdFromData(data)
+  const target = targetEventId ? io.to(gameRoom(targetEventId)) : io.to('game')
+  target.emit(normalizedEvent, data)
+
+  if (normalizedEvent === EVENTS.GAME_PAUSED) {
+    target.emit(EVENTS.GAME_PAUSE, data)
+  }
+
+  if (normalizedEvent === EVENTS.GAME_RESUMED) {
+    target.emit(EVENTS.GAME_RESUME, data)
+  }
+
+  if (normalizedEvent === EVENTS.GAME_STATE_UPDATED) {
+    target.emit('STATE_UPDATED', data)
   }
 }
 
@@ -79,17 +129,26 @@ io.on('connection', (socket: Socket) => {
   if (role === 'admin') void socket.join('admin')
   console.log(`[socket] connected: ${socket.data.user.username} (${role}) — ${socket.id}`)
 
-  socket.on('JOIN_GAME', (payload: { userId: string; token: string }) => {
+  socket.on('JOIN_GAME', (payload: { userId: string; token: string; eventId?: string }) => {
     try {
       jwt.verify(payload.token, JWT_SECRET)
-      void socket.join('game')
+      leaveAllGameRooms(socket)
+      if (payload.eventId) {
+        void socket.join(gameRoom(payload.eventId))
+      } else {
+        // Legacy fallback for older clients that don't send eventId.
+        void socket.join('game')
+      }
       socket.emit('JOINED', { userId: payload.userId })
     } catch {
       socket.emit('AUTH_ERROR', { error: 'Invalid token' })
     }
   })
 
-  socket.on('LEAVE_GAME', () => { void socket.leave('game') })
+  socket.on('LEAVE_GAME', () => {
+    leaveAllGameRooms(socket)
+    void socket.leave('game')
+  })
 
   socket.on('EXECUTE_TRADE', () => {
     socket.emit('TRADE_ERROR', { error: 'Use REST API for trades' })
@@ -114,9 +173,9 @@ io.on('connection', (socket: Socket) => {
 // without going through a socket connection themselves.
 
 app.post('/internal/broadcast', (req, res) => {
-  const { event, data } = req.body as { event: string; data: unknown }
-  io.to('game').emit(event, data)
-  console.log(`[broadcast] ${event}`, data)
+  const { event, data, eventId } = req.body as InternalBroadcastBody
+  emitWithAliases(event, data, eventId)
+  console.log(`[broadcast] ${normalizeEventName(event)}`, data)
   res.json({ ok: true })
 })
 
@@ -141,22 +200,40 @@ async function timerLoop(): Promise<void> {
       for (const state of activeStates as { event_id: string; timer_remaining: number; status: string }[]) {
         const newRemaining = Math.max(0, state.timer_remaining - 1)
 
-        // Update DB
-        await supabase
+        // Compare-and-set avoids duplicate decrements across concurrent timer workers.
+        const { data: updatedRows, error: updateError } = await supabase
           .from('game_state')
           .update({ timer_remaining: newRemaining })
+          .eq('status', 'ROUND_ACTIVE')
+          .eq('timer_remaining', state.timer_remaining)
           .eq('event_id', state.event_id)
+          .select('event_id')
 
-        // Broadcast to participants
-        io.to('game').emit('TIMER_TICK', { remaining: newRemaining })
+        if (updateError) {
+          console.error(`[timer] update error for event ${state.event_id}:`, updateError.message)
+          continue
+        }
+
+        if (!updatedRows || updatedRows.length === 0) {
+          console.log(`[timer] compare-and-set failed for event ${state.event_id}: timer_remaining changed, skipping tick`);
+          continue
+        }
+
+        // Timer is now calculated client-side, no need to broadcast TIMER_TICK every second
+        // This reduces server load and eliminates the eventId serialization issue
+        // io.to(gameRoom(state.event_id)).emit('TIMER_TICK', tickPayload)
 
         // If timer expired, auto-end the round
         if (newRemaining === 0) {
-          console.log(`[timer] round expired for event ${state.event_id}`)
-          io.to('game').emit('ROUND_END', { auto: true })
+          console.log(`[timer] round expired for event ${state.event_id}, emitting ROUND_END`)
+          io.to(gameRoom(state.event_id)).emit('ROUND_END', {
+            eventId: state.event_id,
+            auto: true,
+          })
           await supabase
             .from('game_state')
             .update({ status: 'ROUND_END' })
+            .eq('status', 'ROUND_ACTIVE')
             .eq('event_id', state.event_id)
         }
       }
@@ -176,7 +253,11 @@ app.get('/health', (_req, res) => {
 
 // ─── Broadcast helpers ────────────────────────────────────────────────────────
 
-export function broadcastToGame(event: string, data: unknown): void {
+export function broadcastToGame(event: string, data: unknown, eventId?: string): void {
+  if (eventId) {
+    io.to(gameRoom(eventId)).emit(event, data)
+    return
+  }
   io.to('game').emit(event, data)
 }
 

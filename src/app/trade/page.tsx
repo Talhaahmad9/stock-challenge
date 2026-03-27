@@ -39,7 +39,13 @@ export default function TradePage() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const { logout } = useAuthStore();
-  const { gameState, activeEventId, setGameState } = useGameStore();
+  const activeEventId = useGameStore((s) => s.activeEventId);
+  const status = useGameStore((s) => s.gameState?.status);
+  const currentRound = useGameStore((s) => s.gameState?.currentRound ?? 0);
+  const totalRounds = useGameStore((s) => s.gameState?.totalRounds ?? 0);
+  const hasGameState = useGameStore((s) => !!s.gameState);
+  const setGameState = useGameStore((s) => s.setGameState);
+  const tradingEnabled = useGameStore((s) => s.tradingEnabled);
   const { balance, holdings, stocks, isLoading, fetchPortfolio } =
     usePortfolioStore();
 
@@ -71,10 +77,12 @@ export default function TradePage() {
     if (user) void detectEvent();
   }, [user]);
 
-  const gameStatus = gameState?.status;
+  const gameStatus = status;
+
   useEffect(() => {
     if (!activeEventId || gameStatus === "ROUND_ACTIVE") return;
     const interval = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
       try {
         const res = await fetch("/api/game/state?eventId=" + activeEventId);
         if (res.ok) {
@@ -95,11 +103,9 @@ export default function TradePage() {
       </div>
     );
 
-  const status = gameState?.status;
-
   if (
     !activeEventId ||
-    !gameState ||
+    !hasGameState ||
     ["IDLE", "SETUP", "READY"].includes(status ?? "")
   ) {
     return (
@@ -176,8 +182,8 @@ export default function TradePage() {
           STOCK CHALLENGE
         </span>
         <span className="hidden md:block text-green-700 text-sm tracking-widest">
-          {gameState.currentRound > 0
-            ? "ROUND " + gameState.currentRound + "/" + gameState.totalRounds
+          {currentRound > 0
+            ? "ROUND " + currentRound + "/" + totalRounds
             : "PRE-GAME"}
         </span>
         <div className="flex items-center gap-3 text-xs">
@@ -212,10 +218,10 @@ export default function TradePage() {
 
         {timerActive && (
           <TimerDisplay
-            timerRemaining={gameState.timerRemaining}
             status={status ?? ""}
-            currentRound={gameState.currentRound}
-            totalRounds={gameState.totalRounds}
+            currentRound={currentRound}
+            totalRounds={totalRounds}
+            activeEventId={activeEventId}
           />
         )}
 
@@ -238,27 +244,36 @@ export default function TradePage() {
 
         {tradeTab === "market" && (
           <div className="space-y-6">
+            {!tradingEnabled && (
+              <div className="bg-[#0a0a0a] border border-amber-400/40 rounded-md p-3">
+                <p className="text-xs tracking-widest uppercase text-amber-400">
+                  Trading is paused
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <MarketList
                 stocks={stocks}
                 holdings={holdings}
-                onTrade={(stockId, symbol, price, type) =>
-                  setActiveTrade({ stockId, symbol, price, type })
-                }
+                tradingEnabled={tradingEnabled}
+                onTrade={(stockId, symbol, price, type) => {
+                  if (!tradingEnabled) return;
+                  setActiveTrade({ stockId, symbol, price, type });
+                }}
               />
               <HoldingsList holdings={holdings} />
             </div>
-            {activeEventId && gameState.currentRound > 0 && (
+            {activeEventId && currentRound > 0 && (
               <StockChart
                 eventId={activeEventId}
-                currentRound={gameState.currentRound}
+                currentRound={currentRound}
               />
             )}
           </div>
         )}
       </main>
 
-      {activeTrade && activeEventId && (
+      {activeTrade && activeEventId && tradingEnabled && (
         <TradeModal
           {...activeTrade}
           eventId={activeEventId}
