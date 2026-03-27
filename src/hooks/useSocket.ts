@@ -19,7 +19,6 @@ interface RoundStartPayload {
   eventId?: string;
   roundNumber: number;
   durationSeconds: number;
-  roundStartTime?: string; // ISO timestamp when round started on server
   prices: Record<string, number>;
   caseStudy: string | null;
 }
@@ -123,10 +122,9 @@ export default function useSocket(eventId: string | null) {
           }
           // Update store immediately from socket payload
           updateRound(payload.roundNumber);
-          
-          // Start round with timing: use payload.roundStartTime if available, otherwise use now
-          const startTimeMs = payload.roundStartTime ? new Date(payload.roundStartTime).getTime() : Date.now();
-          startRound(startTimeMs, payload.durationSeconds);
+
+          // Anchor timer to client receipt time to avoid server/client clock skew.
+          startRound(Date.now(), payload.durationSeconds);
           
           updateStatus("ROUND_ACTIVE");
           console.log("[socket] ROUND_START status updated to ROUND_ACTIVE");

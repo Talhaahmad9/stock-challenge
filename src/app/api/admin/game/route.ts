@@ -187,7 +187,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           {
             eventId,
             roundNumber,
-            roundStartTime: new Date().toISOString(),
             durationSeconds: timerResult.durationSeconds ?? 300,
             prices,
             caseStudy: null,
