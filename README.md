@@ -39,6 +39,7 @@
 ## `> TABLE OF CONTENTS`
 
 ```
+[00] RECENT UPDATES (v1.1)
 [01] TECH STACK
 [02] FOLDER STRUCTURE
 [03] DATABASE SCHEMA
@@ -52,6 +53,45 @@
 [11] PRE-COMPETITION CHECKLIST
 [12] CREDITS
 ```
+
+---
+
+## `[00] RECENT UPDATES (v1.1) — March 2026`
+
+### ✅ Completed Improvements
+
+**Timer System Refactor**
+- Fixed timer display cascading render warnings by using `useMemo` for derived state
+- Eliminated client-side setState calls in effects
+- Implemented client-side clock anchoring on `ROUND_START` receipt (removes server timestamp dependency)
+- Fixed 38-second timer start skew issue
+
+**Socket.IO State Synchronization**
+- Added strict `eventId` filtering in GAME_PAUSED/GAME_RESUMED handlers
+- Fixed pause/resume state corruption across events
+- Improved real-time game state sync accuracy
+
+**P&L Chart & Valuation**
+- Fixed P&L chart not updating between rounds
+- Added round status to refresh dependencies
+- Improved valuation fallback chain (lastKnownPrice → avgBuyPrice)
+
+**Admin & Security**
+- Admin user credentials now persist across logout/login cycles (localStorage)
+- Admin password updated to stronger credentials (approved by competition team)
+- Password reset functionality reflects changes immediately in UI
+
+**UI/UX Improvements**
+- Removed leaderboard tab from participant trading panel (simplified view)
+- Leaderboard remains available on game end screen
+- Cleaner, focused market interface for active trading
+
+### 📋 Git Commits (Latest)
+- `9e3eaf1` — Remove leaderboard tab from participant panel
+- `cef0799` — Fix live round timer start skew
+- `cc1a928` — Add password reset immediate feedback
+- `bc631f9` — Fix pause/resume state sync with eventId filtering
+- `9a147f6` — Refactor timer display to remove cascading renders
 
 ---
 
@@ -526,16 +566,11 @@ Key deployment details:
 
 ### Supabase
 
-- Create all tables manually or via migration scripts
+- Create all tables manually or via migration scripts (local only, not tracked in git)
 - **Disable RLS** on every table
 - `game_state.status` must be a PostgreSQL `enum` type named `event_status`
 - Confirm `createServiceClient` uses `@supabase/supabase-js` directly — not `@supabase/ssr` — to guarantee the service role key bypasses RLS
-- Apply performance migration for leaderboard RPC + indexes:
-
-```sql
--- Run this file in Supabase SQL editor
-supabase/migrations/20260327_leaderboard_rpc_indexes.sql
-```
+- See Supabase documentation for leaderboard RPC and index optimization patterns
 
 ```typescript
 // server.ts — correct pattern
