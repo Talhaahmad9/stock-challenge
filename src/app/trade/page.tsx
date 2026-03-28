@@ -14,7 +14,6 @@ import TimerDisplay from "@/components/trade/TimerDisplay";
 import MarketList from "@/components/trade/MarketList";
 import HoldingsList from "@/components/trade/HoldingsList";
 import TradeModal from "@/components/trade/TradeModal";
-import Leaderboard from "@/components/shared/Leaderboard";
 import StockChart from "@/components/trade/StockChart";
 
 interface ActiveTrade {
@@ -56,7 +55,6 @@ export default function TradePage() {
 
   const { isConnected: socketConnected } = useSocket(activeEventId);
   const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
-  const [tradeTab, setTradeTab] = useState<"market" | "leaderboard">("market");
 
   useEffect(() => {
     async function detectEvent() {
@@ -165,9 +163,6 @@ export default function TradePage() {
               {formatCurrency(totalPnL)} P&L
             </p>
           </div>
-          {activeEventId && (
-            <Leaderboard eventId={activeEventId} pollInterval={10000} />
-          )}
         </main>
       </div>
     );
@@ -225,25 +220,7 @@ export default function TradePage() {
           />
         )}
 
-        <div className="flex gap-4 border-b border-green-500/20">
-          {(["market", "leaderboard"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setTradeTab(tab)}
-              className={
-                "py-2 text-xs tracking-widest uppercase transition-colors cursor-pointer " +
-                (tradeTab === tab
-                  ? "border-b-2 border-green-400 text-green-400"
-                  : "text-green-700 hover:text-green-400")
-              }
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-
-        {tradeTab === "market" && (
-          <div className="space-y-6">
+        <div className="space-y-6">
             {!tradingEnabled && (
               <div className="bg-[#0a0a0a] border border-amber-400/40 rounded-md p-3">
                 <p className="text-xs tracking-widest uppercase text-amber-400">
@@ -270,8 +247,7 @@ export default function TradePage() {
                 status={status ?? ""}
               />
             )}
-          </div>
-        )}
+        </div>
       </main>
 
       {activeTrade && activeEventId && tradingEnabled && (
