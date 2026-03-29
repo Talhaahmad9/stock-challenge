@@ -1,24 +1,26 @@
 ```
-███████╗████████╗ ██████╗  ██████╗██╗  ██╗
-██╔════╝╚══██╔══╝██╔═══██╗██╔════╝██║ ██╔╝
-███████╗   ██║   ██║   ██║██║     █████╔╝
-╚════██║   ██║   ██║   ██║██║     ██╔═██╗
-███████║   ██║   ╚██████╔╝╚██████╗██║  ██╗
-╚══════╝   ╚═╝    ╚═════╝  ╚═════╝╚═╝  ╚═╝
+███╗   ███╗ █████╗ ██████╗ ██╗  ██╗███████╗████████╗
+████╗ ████║██╔══██╗██╔══██╗██║ ██╔╝██╔════╝╚══██╔══╝
+██╔████╔██║███████║██████╔╝█████╔╝ █████╗     ██║
+██║╚██╔╝██║██╔══██║██╔══██╗██╔═██╗ ██╔══╝     ██║
+██║ ╚═╝ ██║██║  ██║██║  ██║██║  ██╗███████╗   ██║
+╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝
 
- ██████╗██╗  ██╗ █████╗ ██╗     ██╗     ███████╗███╗   ██╗ ██████╗ ███████╗
-██╔════╝██║  ██║██╔══██╗██║     ██║     ██╔════╝████╗  ██║██╔════╝ ██╔════╝
-██║     ███████║███████║██║     ██║     █████╗  ██╔██╗ ██║██║  ███╗█████╗
-██║     ██╔══██║██╔══██║██║     ██║     ██╔══╝  ██║╚██╗██║██║   ██║██╔══╝
-╚██████╗██║  ██║██║  ██║███████╗███████╗███████╗██║ ╚████║╚██████╔╝███████╗
- ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝
+███╗   ███╗ █████╗ ██╗   ██╗██╗  ██╗███████╗███╗   ███╗
+████╗ ████║██╔══██╗╚██╗ ██╔╝██║  ██║██╔════╝████╗ ████║
+██╔████╔██║███████║ ╚████╔╝ ███████║█████╗  ██╔████╔██║
+██║╚██╔╝██║██╔══██║  ╚██╔╝  ██╔══██║██╔══╝  ██║╚██╔╝██║
+██║ ╚═╝ ██║██║  ██║   ██║   ██║  ██║███████╗██║ ╚═╝ ██║
+╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝
 ```
 
 <div align="center">
 
 **`[ SYSTEM: ONLINE ]` &nbsp;·&nbsp; `[ PLAYERS: CONNECTED ]` &nbsp;·&nbsp; `[ MARKET: OPEN ]`**
 
-[![Live](https://img.shields.io/badge/LIVE-stockchallenge.vercel.app-00ff41?style=for-the-badge&logo=vercel&logoColor=black)](https://stockchallenge.vercel.app)
+# **MARKET MAYHEM**
+
+[![Live](https://img.shields.io/badge/LIVE-marketmayhem.vercel.app-00ff41?style=for-the-badge&logo=vercel&logoColor=black)](https://marketmayhem.vercel.app)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)](https://nextjs.org)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ecf8e?style=for-the-badge&logo=supabase)](https://supabase.com)
 [![Socket.IO](https://img.shields.io/badge/Socket.IO-Realtime-010101?style=for-the-badge&logo=socket.io)](https://socket.io)
@@ -30,7 +32,7 @@
 
 ## `> INITIALIZING SYSTEM...`
 
-**Market Mayhem** is a real-time multiplayer stock trading simulation built for university finance society competitions. An admin controls timed trading rounds, participants trade stocks with virtual money, and a live leaderboard ranks everyone by total portfolio value. Built for ~60–70 concurrent players in a single high-pressure session.
+**MARKET MAYHEM** is a real-time multiplayer stock trading simulation built for university finance society competitions. An admin controls timed trading rounds, participants trade stocks with virtual money, and a live leaderboard ranks everyone by total portfolio value. Built for ~60–70 concurrent players in a single high-pressure session.
 
 > No real money. Maximum adrenaline.
 
@@ -56,7 +58,7 @@
 
 ---
 
-## `[00] RECENT UPDATES (v1.2) — March 2026`
+## `╔═ [00] RECENT UPDATES (v1.2) — March 2026`
 
 ### ✅ Completed Improvements
 
@@ -88,12 +90,12 @@
 - Participant trade panel no longer has market/leaderboard tabs (focused trading layout)
 - Leaderboard remains available in admin monitor tab and via leaderboard API
 
-### ��� Latest Commit
+### Latest Commit
 - `4ee6868` — Add synchronous End Round control and rename app to Market Mayhem
 
 ---
 
-## `[01] TECH STACK`
+## `╔═ [01] TECH STACK`
 
 ```
 ╔══════════════════╦══════════════════════════════════════════════════════════╗
@@ -112,7 +114,7 @@
 
 ---
 
-## `[02] FOLDER STRUCTURE`
+## `╔═ [02] FOLDER STRUCTURE`
 
 ```
 stock-challenge/
@@ -147,7 +149,7 @@ stock-challenge/
 
 ---
 
-## `[03] DATABASE SCHEMA`
+## `╔═ [03] DATABASE SCHEMA`
 
 Core tables:
 
@@ -171,7 +173,7 @@ Notes:
 
 ---
 
-## `[04] GAME STATE MACHINE`
+## `╔═ [04] GAME STATE MACHINE`
 
 ```
 READY ── START GAME ──► RUNNING ── START ROUND ──► ROUND_ACTIVE
@@ -191,7 +193,7 @@ RESET from admin control returns event to READY with cleared round/trade runtime
 
 ---
 
-## `[05] SOCKET EVENTS`
+## `╔═ [05] SOCKET EVENTS`
 
 Broadcast flow includes:
 
@@ -209,7 +211,7 @@ All game broadcasts are scoped by event room: `game:<eventId>`.
 
 ---
 
-## `[06] ADMIN PANEL`
+## `╔═ [06] ADMIN PANEL`
 
 Access: `/admin` (admin role required)
 
@@ -243,7 +245,7 @@ When a round is `ROUND_ACTIVE`, clicking **END ROUND** calls `END_AND_START_NEXT
 
 ---
 
-## `[07] PARTICIPANT PANEL`
+## `╔═ [07] PARTICIPANT PANEL`
 
 Access: `/trade`
 
@@ -262,7 +264,7 @@ Access: `/trade`
 
 ---
 
-## `[08] ENVIRONMENT VARIABLES`
+## `╔═ [08] ENVIRONMENT VARIABLES`
 
 ### Next.js app
 
@@ -289,7 +291,7 @@ PORT=4000
 
 ---
 
-## `[09] DEPLOYMENT`
+## `╔═ [09] DEPLOYMENT`
 
 - Next.js app: Vercel
 - Socket server: Railway
@@ -301,7 +303,7 @@ Operational notes:
 
 ---
 
-## `[10] LOCAL SETUP`
+## `╔═ [10] LOCAL SETUP`
 
 ```bash
 # app
@@ -317,7 +319,7 @@ npm run dev
 
 ---
 
-## `[11] PRE-COMPETITION CHECKLIST`
+## `╔═ [11] PRE-COMPETITION CHECKLIST`
 
 - Create/select active event
 - Add stocks and all round prices
@@ -333,11 +335,19 @@ npm run dev
 
 ---
 
-## `[12] CREDITS`
+## `╔═ [12] CREDITS`
 
-Built by Talha Ahmad.
+```
+╔══════════════════════════════════════════════════════════╗
+║                     BUILT BY                             ║
+║                                                          ║
+║   [Talha Ahmad](https://talhaahmad.vercel.app)          ║
+║                                                          ║
+║   Stack assembled for high-pressure live competition.    ║
+╚══════════════════════════════════════════════════════════╝
+```
 
-Stack assembled for high-pressure live competition rounds.
+**Punchline:** *Outtrade the noise. Own the close.*
 
 ---
 
