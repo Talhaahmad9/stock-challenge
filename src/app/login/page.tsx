@@ -40,7 +40,7 @@ export default function LoginPage() {
             className="text-3xl font-mono font-bold uppercase text-green-400 tracking-widest"
             style={{ textShadow: '0 0 20px #00ff41' }}
           >
-            STOCK CHALLENGE
+            MARKET MAYHEM
           </h1>
           <p className="text-xs tracking-widest text-green-500/60 uppercase">
             Trading Simulation Platform

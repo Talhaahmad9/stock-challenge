@@ -133,7 +133,7 @@ export default function TradePage() {
       <div className="min-h-screen bg-black font-mono text-green-400">
         <header className="sticky top-0 z-40 bg-black border-b border-green-500/20 px-4 py-3 flex items-center justify-between">
           <span className="font-bold tracking-widest text-green-400 text-sm">
-            STOCK CHALLENGE
+            MARKET MAYHEM
           </span>
           <span className="text-green-700 text-sm tracking-widest">
             FINAL RESULTS
@@ -174,7 +174,7 @@ export default function TradePage() {
     <div className="min-h-screen bg-black font-mono text-green-400">
       <header className="sticky top-0 z-40 bg-black border-b border-green-500/20 px-4 py-3 flex items-center justify-between">
         <span className="font-bold tracking-widest text-green-400 text-sm">
-          STOCK CHALLENGE
+          MARKET MAYHEM
         </span>
         <span className="hidden md:block text-green-700 text-sm tracking-widest">
           {currentRound > 0

@@ -81,6 +81,22 @@ export default function GameControls({
               "START ROUND"
             )}
           </button>
+          <button
+            disabled={
+              status !== "ROUND_ACTIVE" ||
+              currentRound <= 0 ||
+              !!actionLoading ||
+              !selectedEventId
+            }
+            onClick={() => onAction("END_AND_START_NEXT_ROUND")}
+            className={btn}
+          >
+            {actionLoading === "END_AND_START_NEXT_ROUND" ? (
+              <Spinner size="sm" />
+            ) : (
+              "END ROUND"
+            )}
+          </button>
           {(status === "ROUND_ACTIVE" || status === "RUNNING") && (
             <button
               disabled={!!actionLoading || !selectedEventId}

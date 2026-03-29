@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Stock Challenge",
+  title: "Market Mayhem",
   description: "University finance society stock trading simulation",
   robots: { index: false, follow: false },
   icons: { icon: "/favicon.png" },

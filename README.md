@@ -30,7 +30,7 @@
 
 ## `> INITIALIZING SYSTEM...`
 
-**Stock Challenge** is a real-time multiplayer stock trading simulation built for university finance society competitions. An admin controls timed trading rounds, participants trade stocks with virtual money, and a live leaderboard ranks everyone by total portfolio value. Built for ~60–70 concurrent players in a single high-pressure session.
+**Market Mayhem** is a real-time multiplayer stock trading simulation built for university finance society competitions. An admin controls timed trading rounds, participants trade stocks with virtual money, and a live leaderboard ranks everyone by total portfolio value. Built for ~60–70 concurrent players in a single high-pressure session.
 
 > No real money. Maximum adrenaline.
 
@@ -450,7 +450,7 @@ Once `ROUND_ACTIVE`:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  STOCK CHALLENGE         ROUND 2/5          ● player07                     │
+│  MARKET MAYHEM           ROUND 2/5          ● player07                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  BALANCE: ₨12,450.00    PORTFOLIO: ₨8,320.00    P&L: +₨770.00             │
 ├─────────────────────────────────────────────────────────────────────────────┤

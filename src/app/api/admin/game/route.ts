@@ -48,6 +48,54 @@ async function socketBroadcast(
   }
 }
 
+async function getRoundPricesBySymbol(
+  supabase: SupabaseClient,
+  eventId: string,
+  roundNumber: number,
+): Promise<Record<string, number>> {
+  const { data: roundData } = await supabase
+    .from("rounds")
+    .select("id")
+    .eq("event_id", eventId)
+    .eq("round_number", roundNumber)
+    .single();
+
+  const prices: Record<string, number> = {};
+  if (!roundData) return prices;
+
+  const roundId = (roundData as { id: string }).id;
+  const { data: stockPrices } = await supabase
+    .from("stock_prices")
+    .select("price, stock_id")
+    .eq("round_id", roundId);
+
+  if (!stockPrices || stockPrices.length === 0) return prices;
+
+  const stockIds = (stockPrices as { price: number; stock_id: string }[]).map(
+    (sp) => sp.stock_id,
+  );
+  const { data: stockSymbols } = await supabase
+    .from("stocks")
+    .select("id, symbol")
+    .in("id", stockIds);
+
+  if (!stockSymbols) return prices;
+
+  const symbolMap = new Map(
+    (stockSymbols as { id: string; symbol: string }[]).map((s) => [
+      s.id,
+      s.symbol,
+    ]),
+  );
+
+  for (const sp of stockPrices as { price: number; stock_id: string }[]) {
+    const symbol = symbolMap.get(sp.stock_id);
+    if (symbol) prices[symbol] = sp.price;
+  }
+
+  return prices;
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const auth = await requireAdmin();
   if (auth.error) {
@@ -138,48 +186,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             { status: 400 },
           );
 
-        // Fetch stock prices for this round to broadcast
-        const { data: roundData } = await supabase
-          .from("rounds")
-          .select("id")
-          .eq("event_id", eventId)
-          .eq("round_number", roundNumber)
-          .single();
-
-        const prices: Record<string, number> = {};
-        if (roundData) {
-          const roundId = (roundData as { id: string }).id;
-          const { data: stockPrices } = await supabase
-            .from("stock_prices")
-            .select("price, stock_id")
-            .eq("round_id", roundId);
-
-          if (stockPrices) {
-            const stockIds = (
-              stockPrices as { price: number; stock_id: string }[]
-            ).map((sp) => sp.stock_id);
-            const { data: stockSymbols } = await supabase
-              .from("stocks")
-              .select("id, symbol")
-              .in("id", stockIds);
-
-            if (stockSymbols) {
-              const symbolMap = new Map(
-                (stockSymbols as { id: string; symbol: string }[]).map((s) => [
-                  s.id,
-                  s.symbol,
-                ]),
-              );
-              for (const sp of stockPrices as {
-                price: number;
-                stock_id: string;
-              }[]) {
-                const symbol = symbolMap.get(sp.stock_id);
-                if (symbol) prices[symbol] = sp.price;
-              }
-            }
-          }
-        }
+        const prices = await getRoundPricesBySymbol(supabase, eventId, roundNumber);
 
         // Auto-broadcast ROUND_START to all participants
         await socketBroadcast(
@@ -196,6 +203,73 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         return NextResponse.json({
           success: true,
+          durationSeconds: timerResult.durationSeconds,
+        });
+      }
+
+      case "END_AND_START_NEXT_ROUND": {
+        const currentState = await getGameState(eventId);
+        if (!currentState) {
+          return NextResponse.json(
+            { error: "Game state not found" },
+            { status: 400 },
+          );
+        }
+
+        if (currentState.status !== "ROUND_ACTIVE") {
+          return NextResponse.json(
+            { error: "Round must be active to end and start next" },
+            { status: 400 },
+          );
+        }
+
+        const activeRound = currentState.currentRound;
+        const roundsTotal = currentState.totalRounds;
+
+        const endResult = await endRound(eventId, activeRound, roundsTotal);
+        if (!endResult.success)
+          return NextResponse.json({ error: endResult.error }, { status: 400 });
+
+        await socketBroadcast(
+          "ROUND_END",
+          { eventId, roundNumber: activeRound, manual: true },
+          eventId,
+        );
+
+        if (activeRound >= roundsTotal) {
+          return NextResponse.json({ success: true, gameEnded: true });
+        }
+
+        const nextRound = activeRound + 1;
+        const timerResult = await initRoundTimer(eventId, nextRound);
+        if (!timerResult.success)
+          return NextResponse.json(
+            { error: timerResult.error },
+            { status: 400 },
+          );
+
+        const startResult = await startRound(eventId, nextRound);
+        if (!startResult.success)
+          return NextResponse.json({ error: startResult.error }, { status: 400 });
+
+        const prices = await getRoundPricesBySymbol(supabase, eventId, nextRound);
+
+        await socketBroadcast(
+          "ROUND_START",
+          {
+            eventId,
+            roundNumber: nextRound,
+            durationSeconds: timerResult.durationSeconds ?? 300,
+            prices,
+            caseStudy: null,
+          },
+          eventId,
+        );
+
+        return NextResponse.json({
+          success: true,
+          endedRound: activeRound,
+          startedRound: nextRound,
           durationSeconds: timerResult.durationSeconds,
         });
       }

@@ -23,7 +23,7 @@ export default function RootPage() {
     <div className="min-h-screen bg-black flex items-center justify-center font-mono">
       <div className="flex flex-col items-center gap-4">
         <p className="text-green-400 text-sm tracking-widest uppercase animate-pulse">
-          STOCK CHALLENGE
+          MARKET MAYHEM
         </p>
         <div className="flex items-end gap-1">
           {[2, 4, 3, 5, 2, 4, 3].map((h, i) => (
