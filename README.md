@@ -337,17 +337,21 @@ npm run dev
 
 ## `╔═ [12] CREDITS`
 
-```
+<div align="center">
+
+```text
 ╔══════════════════════════════════════════════════════════╗
-║                     BUILT BY                             ║
-║                                                          ║
-║   [Talha Ahmad](https://talhaahmad.vercel.app)          ║
-║                                                          ║
-║   Stack assembled for high-pressure live competition.    ║
+║                       BUILT BY                           ║
 ╚══════════════════════════════════════════════════════════╝
 ```
 
-**Punchline:** *Outtrade the noise. Own the close.*
+### [Talha Ahmad](https://talhaahmad.vercel.app)
+
+*Stack assembled in the dark with too much caffeine.*
+
+**Outtrade the noise. Own the close.**
+
+</div>
 
 ---
 
