@@ -139,7 +139,8 @@ export default function StockChart({ eventId, currentRound, status }: Props) {
             tickLine={false}
           />
           <YAxis
-            domain={[0, 15000]}
+            domain={[-15000, 15000]}
+            allowDataOverflow
             tick={{ fill: "#166534", fontSize: 10, fontFamily: "monospace" }}
             axisLine={{ stroke: "#14532d50" }}
             tickLine={false}
