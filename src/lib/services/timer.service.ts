@@ -9,12 +9,18 @@ interface GameStateRow {
   status: string
   current_round: number
   timer_remaining: number
+  round_started_at: string | null
+  round_expires_at: string | null
   paused_at: string | null
 }
 
 interface RoundRow {
   id: string
   duration_seconds: number
+}
+
+function isMissingColumnError(message: string | undefined): boolean {
+  return Boolean(message && message.toLowerCase().includes('column'))
 }
 
 // ─── Supabase client helper ───────────────────────────────────────────────────
@@ -28,7 +34,7 @@ async function db(): Promise<SupabaseClient> {
 export async function initRoundTimer(
   eventId: string,
   roundNumber: number
-): Promise<{ success: boolean; durationSeconds: number; error?: string }> {
+): Promise<{ success: boolean; durationSeconds: number; expiresAt: string; error?: string }> {
   try {
     const supabase = await db()
 
@@ -40,27 +46,48 @@ export async function initRoundTimer(
       .single()
 
     if (roundError || !roundData) {
-      return { success: false, durationSeconds: 0, error: roundError?.message ?? 'Round not found' }
+      return { success: false, durationSeconds: 0, expiresAt: '', error: roundError?.message ?? 'Round not found' }
     }
 
     const round = roundData as unknown as RoundRow
+    const nowMs = Date.now()
+    const expiresAt = new Date(nowMs + round.duration_seconds * 1000).toISOString()
+    const startedAt = new Date(nowMs).toISOString()
 
     const { error: updateError } = await supabase
       .from('game_state')
       .update({
         timer_remaining: round.duration_seconds,
+        round_started_at: startedAt,
+        round_expires_at: expiresAt,
         last_updated: new Date().toISOString(),
       })
       .eq('event_id', eventId)
 
     if (updateError) {
-      return { success: false, durationSeconds: 0, error: updateError.message as string }
+      if (isMissingColumnError(updateError.message)) {
+        const { error: legacyError } = await supabase
+          .from('game_state')
+          .update({
+            timer_remaining: round.duration_seconds,
+            last_updated: new Date().toISOString(),
+          })
+          .eq('event_id', eventId)
+
+        if (legacyError) {
+          return { success: false, durationSeconds: 0, expiresAt: '', error: legacyError.message as string }
+        }
+
+        return { success: true, durationSeconds: round.duration_seconds, expiresAt }
+      }
+
+      return { success: false, durationSeconds: 0, expiresAt: '', error: updateError.message as string }
     }
 
-    return { success: true, durationSeconds: round.duration_seconds }
+    return { success: true, durationSeconds: round.duration_seconds, expiresAt }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unexpected error'
-    return { success: false, durationSeconds: 0, error: message }
+    return { success: false, durationSeconds: 0, expiresAt: '', error: message }
   }
 }
 
@@ -68,23 +95,41 @@ export async function initRoundTimer(
 
 export async function getTimerState(
   eventId: string
-): Promise<{ timerRemaining: number; status: string } | null> {
+): Promise<{ timerRemaining: number; status: string; roundExpiresAt: string | null } | null> {
   try {
     const supabase = await db()
 
     const { data, error } = await supabase
       .from('game_state')
-      .select('timer_remaining, status')
+      .select('timer_remaining, status, round_expires_at')
       .eq('event_id', eventId)
       .single()
 
+    if (error && isMissingColumnError(error.message)) {
+      const { data: legacyData, error: legacyError } = await supabase
+        .from('game_state')
+        .select('timer_remaining, status')
+        .eq('event_id', eventId)
+        .single()
+
+      if (legacyError || !legacyData) return null
+
+      const legacyRow = legacyData as unknown as Pick<GameStateRow, 'timer_remaining' | 'status'>
+      return {
+        timerRemaining: legacyRow.timer_remaining,
+        status: legacyRow.status,
+        roundExpiresAt: null,
+      }
+    }
+
     if (error || !data) return null
 
-    const row = data as unknown as Pick<GameStateRow, 'timer_remaining' | 'status'>
+    const row = data as unknown as Pick<GameStateRow, 'timer_remaining' | 'status' | 'round_expires_at'>
 
     return {
       timerRemaining: row.timer_remaining,
       status: row.status,
+      roundExpiresAt: row.round_expires_at,
     }
   } catch {
     return null

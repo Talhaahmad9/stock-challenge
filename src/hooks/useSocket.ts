@@ -12,6 +12,8 @@ interface GameStateUpdatePayload {
   eventId: string;
   status: EventStatus;
   timerRemaining: number | null;
+  expiresAt?: string | null;
+  serverTimeMs?: number;
   currentRound: number | null;
 }
 
@@ -19,6 +21,8 @@ interface RoundStartPayload {
   eventId?: string;
   roundNumber: number;
   durationSeconds: number;
+  expiresAt?: string;
+  serverTimeMs?: number;
   prices: Record<string, number>;
   caseStudy: string | null;
 }
@@ -27,6 +31,7 @@ interface RoundEndPayload {
   eventId?: string;
   auto?: boolean;
   roundNumber?: number;
+  serverTimeMs?: number;
 }
 
 interface GameStartPayload {
@@ -37,6 +42,8 @@ interface GameStartPayload {
 interface TimerTickPayload {
   eventId?: string;
   remaining: number;
+  expiresAt?: string | null;
+  serverTimeMs?: number;
 }
 
 // FIX: token must come from API — httpOnly cookies are not readable by JS
@@ -56,7 +63,7 @@ export default function useSocket(eventId: string | null) {
   const [isConnected, setIsConnectedState] = useState(false);
 
   const user = useAuthStore((s) => s.user);
-  const { setConnected, startRound, updateStatus, updateRound, updateTimer } =
+  const { setConnected, syncTimerSnapshot, updateStatus, updateRound, updateTimer } =
     useGameStore();
   const { updateAfterTrade, fetchPortfolio } = usePortfolioStore();
 
@@ -123,8 +130,11 @@ export default function useSocket(eventId: string | null) {
           // Update store immediately from socket payload
           updateRound(payload.roundNumber);
 
-          // Anchor timer to client receipt time to avoid server/client clock skew.
-          startRound(Date.now(), payload.durationSeconds);
+          syncTimerSnapshot(
+            payload.durationSeconds,
+            payload.expiresAt,
+            payload.serverTimeMs,
+          );
           
           updateStatus("ROUND_ACTIVE");
           console.log("[socket] ROUND_START status updated to ROUND_ACTIVE");
@@ -142,27 +152,36 @@ export default function useSocket(eventId: string | null) {
           return;
         }
         console.log("[socket] ROUND_END updating status to ROUND_END");
+        syncTimerSnapshot(0, null, payload?.serverTimeMs);
         updateStatus("ROUND_END");
         if (eventId) void fetchPortfolio(eventId);
       });
 
-      socket.on("TIMER_TICK", () => {
-        // Timer is now calculated client-side based on roundStartTime + elapsed time
-        // This handler is a no-op but kept for backward compatibility
+      socket.on("TIMER_TICK", (payload: TimerTickPayload) => {
+        if (payload?.eventId && payload.eventId !== eventId) return;
+        if (typeof payload?.remaining !== "number") return;
+
+        updateTimer(payload.remaining);
+        syncTimerSnapshot(payload.remaining, payload.expiresAt ?? null, payload.serverTimeMs);
       });
 
       function handleStateUpdate(payload: GameStateUpdatePayload) {
         if (payload.eventId !== eventId) return;
-        const previousStatus = useGameStore.getState().gameState?.status;
         updateStatus(payload.status);
         if (typeof payload.currentRound === "number") {
           updateRound(payload.currentRound);
         }
         if (typeof payload.timerRemaining === "number") {
           updateTimer(payload.timerRemaining);
-          // Re-anchor local elapsed timer only when resuming from PAUSED.
-          if (payload.status === "ROUND_ACTIVE" && previousStatus === "PAUSED") {
-            startRound(Date.now(), payload.timerRemaining);
+          if (
+            payload.status === "ROUND_ACTIVE" ||
+            payload.status === "PAUSED"
+          ) {
+            syncTimerSnapshot(
+              payload.timerRemaining,
+              payload.expiresAt ?? null,
+              payload.serverTimeMs,
+            );
           }
         }
       }
@@ -176,6 +195,7 @@ export default function useSocket(eventId: string | null) {
         if (payload?.eventId && payload.eventId !== eventId) return;
         if (typeof payload?.timerRemaining === "number") {
           updateTimer(payload.timerRemaining);
+          syncTimerSnapshot(payload.timerRemaining, payload.expiresAt ?? null, payload.serverTimeMs);
         }
         updateStatus("PAUSED");
       });
@@ -186,9 +206,7 @@ export default function useSocket(eventId: string | null) {
           typeof payload?.timerRemaining === "number"
             ? payload.timerRemaining
             : useGameStore.getState().gameState?.timerRemaining ?? 0;
-        if (remaining > 0) {
-          startRound(Date.now(), remaining);
-        }
+        syncTimerSnapshot(remaining, payload?.expiresAt ?? null, payload?.serverTimeMs);
         updateStatus("ROUND_ACTIVE");
       });
 
@@ -222,16 +240,16 @@ export default function useSocket(eventId: string | null) {
     // This handles the case where ROUND_END socket event is missed
     const timerCheckInterval = setInterval(() => {
       const state = useGameStore.getState();
-      if (state.gameState?.status === "ROUND_ACTIVE" && state.roundStartTime && state.roundDurationSeconds > 0) {
-        const elapsedMs = Date.now() - state.roundStartTime;
-        const remainingMs = state.roundDurationSeconds * 1000 - elapsedMs;
+      if (state.gameState?.status === "ROUND_ACTIVE" && state.timerExpiresAtMs) {
+        const remainingMs = state.timerExpiresAtMs - Date.now();
         
         if (remainingMs <= 0) {
           console.log("[socket] Auto-transitioning from ROUND_ACTIVE to ROUND_END (timer hit 0)");
+          syncTimerSnapshot(0);
           updateStatus("ROUND_END");
         }
       }
-    }, 500);
+    }, 100);
 
     return () => {
       cancelled = true;

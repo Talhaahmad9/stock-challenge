@@ -170,6 +170,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             { status: 400 },
           );
         }
+
+        const preState = await getGameState(eventId);
+        if (
+          preState &&
+          preState.status === "ROUND_ACTIVE" &&
+          preState.currentRound === roundNumber
+        ) {
+          return NextResponse.json({
+            success: true,
+            alreadyApplied: true,
+            durationSeconds: preState.timerRemaining,
+          });
+        }
+
         // Init timer FIRST so timer_remaining is set before status becomes ROUND_ACTIVE
         // This prevents the timerLoop from seeing 0 and auto-ending the round
         const timerResult = await initRoundTimer(eventId, roundNumber);
@@ -195,6 +209,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             eventId,
             roundNumber,
             durationSeconds: timerResult.durationSeconds ?? 300,
+            expiresAt: timerResult.expiresAt,
+            serverTimeMs: Date.now(),
             prices,
             caseStudy: null,
           },
@@ -232,7 +248,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         await socketBroadcast(
           "ROUND_END",
-          { eventId, roundNumber: activeRound, manual: true },
+          {
+            eventId,
+            roundNumber: activeRound,
+            manual: true,
+            serverTimeMs: Date.now(),
+          },
           eventId,
         );
 
@@ -260,6 +281,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             eventId,
             roundNumber: nextRound,
             durationSeconds: timerResult.durationSeconds ?? 300,
+            expiresAt: timerResult.expiresAt,
+            serverTimeMs: Date.now(),
             prices,
             caseStudy: null,
           },
@@ -281,10 +304,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             { status: 400 },
           );
         }
+
+        const preState = await getGameState(eventId);
+        if (
+          preState &&
+          (preState.status === "ROUND_END" || preState.status === "GAME_END") &&
+          preState.currentRound >= roundNumber
+        ) {
+          return NextResponse.json({ success: true, alreadyApplied: true });
+        }
+
         const result = await endRound(eventId, roundNumber, totalRounds);
         if (!result.success)
           return NextResponse.json({ error: result.error }, { status: 400 });
-        await socketBroadcast("ROUND_END", { eventId, roundNumber }, eventId);
+        await socketBroadcast(
+          "ROUND_END",
+          { eventId, roundNumber, serverTimeMs: Date.now() },
+          eventId,
+        );
         return NextResponse.json(result);
       }
 
@@ -299,6 +336,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             eventId,
             status: "PAUSED",
             timerRemaining: gameState?.timerRemaining ?? null,
+            expiresAt: gameState?.roundExpiresAt ?? null,
+            serverTimeMs: Date.now(),
             currentRound: gameState?.currentRound ?? null,
           },
           eventId,
@@ -309,6 +348,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             eventId,
             status: "PAUSED",
             timerRemaining: gameState?.timerRemaining ?? null,
+            expiresAt: gameState?.roundExpiresAt ?? null,
+            serverTimeMs: Date.now(),
             currentRound: gameState?.currentRound ?? null,
           },
           eventId,
@@ -327,6 +368,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             eventId,
             status: gameState?.status ?? "RUNNING",
             timerRemaining: gameState?.timerRemaining ?? null,
+            expiresAt: gameState?.roundExpiresAt ?? null,
+            serverTimeMs: Date.now(),
             currentRound: gameState?.currentRound ?? null,
           },
           eventId,
@@ -337,6 +380,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             eventId,
             status: gameState?.status ?? "RUNNING",
             timerRemaining: gameState?.timerRemaining ?? null,
+            expiresAt: gameState?.roundExpiresAt ?? null,
+            serverTimeMs: Date.now(),
             currentRound: gameState?.currentRound ?? null,
           },
           eventId,

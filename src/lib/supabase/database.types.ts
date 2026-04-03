@@ -234,6 +234,8 @@ export interface Database {
           current_round: number;
           status: EventStatus;
           timer_remaining: number;
+          round_started_at: string | null;
+          round_expires_at: string | null;
           paused_at: string | null;
           last_updated: string;
         };
@@ -243,6 +245,8 @@ export interface Database {
           current_round?: number;
           status?: EventStatus;
           timer_remaining?: number;
+          round_started_at?: string | null;
+          round_expires_at?: string | null;
           paused_at?: string | null;
           last_updated?: string;
         };
@@ -250,6 +254,8 @@ export interface Database {
           current_round?: number;
           status?: EventStatus;
           timer_remaining?: number;
+          round_started_at?: string | null;
+          round_expires_at?: string | null;
           paused_at?: string | null;
           last_updated?: string;
         };
@@ -293,6 +299,8 @@ export interface GameState {
   currentRound: number;
   timerRemaining: number;
   totalRounds: number;
+  roundExpiresAt?: string | null;
+  serverTimeMs?: number;
 }
 
 export interface StockWithPrice {
@@ -338,8 +346,11 @@ export interface TradeResult {
 // ============================================
 
 export interface RoundStartPayload {
+  eventId?: string;
   roundNumber: number;
   durationSeconds: number;
+  expiresAt?: string;
+  serverTimeMs?: number;
   prices: Record<string, number>;
   caseStudy: string | null;
 }

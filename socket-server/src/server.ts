@@ -14,6 +14,7 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN ?? 'http://localhost:3000'
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const JWT_SECRET = process.env.JWT_SECRET!
+const USE_TIMER_V2 = process.env.USE_TIMER_V2 !== 'false'
 
 // ─── Supabase ─────────────────────────────────────────────────────────────────
 
@@ -190,20 +191,61 @@ app.post('/internal/broadcast-user', (req, res) => {
 
 async function timerLoop(): Promise<void> {
   try {
+    const nowMs = Date.now()
+
     // Find all events with an active round
-    const { data: activeStates } = await supabase
+    let activeStates: {
+      event_id: string
+      timer_remaining: number
+      status: string
+      round_expires_at: string | null
+    }[] | null = null
+
+    const { data, error } = await supabase
       .from('game_state')
-      .select('event_id, timer_remaining, status')
+      .select('event_id, timer_remaining, status, round_expires_at')
       .eq('status', 'ROUND_ACTIVE')
 
+    if (error && error.message.toLowerCase().includes('column')) {
+      const { data: legacyStates, error: legacyError } = await supabase
+        .from('game_state')
+        .select('event_id, timer_remaining, status')
+        .eq('status', 'ROUND_ACTIVE')
+
+      if (legacyError) {
+        console.error('[timer] legacy select error:', legacyError.message)
+      } else {
+        activeStates = (legacyStates ?? []).map((row) => ({
+          ...(row as { event_id: string; timer_remaining: number; status: string }),
+          round_expires_at: null,
+        }))
+      }
+    } else if (error) {
+      console.error('[timer] select error:', error.message)
+    } else {
+      activeStates = data as {
+        event_id: string
+        timer_remaining: number
+        status: string
+        round_expires_at: string | null
+      }[]
+    }
+
     if (activeStates && activeStates.length > 0) {
-      for (const state of activeStates as { event_id: string; timer_remaining: number; status: string }[]) {
-        const newRemaining = Math.max(0, state.timer_remaining - 1)
+      for (const state of activeStates) {
+        let newRemaining = Math.max(0, state.timer_remaining - 1)
+
+        if (USE_TIMER_V2 && state.round_expires_at) {
+          const expiresAtMs = new Date(state.round_expires_at).getTime()
+          newRemaining = Number.isFinite(expiresAtMs)
+            ? Math.max(0, Math.ceil((expiresAtMs - nowMs) / 1000))
+            : newRemaining
+        }
 
         // Compare-and-set avoids duplicate decrements across concurrent timer workers.
         const { data: updatedRows, error: updateError } = await supabase
           .from('game_state')
-          .update({ timer_remaining: newRemaining })
+          .update({ timer_remaining: newRemaining, last_updated: new Date(nowMs).toISOString() })
           .eq('status', 'ROUND_ACTIVE')
           .eq('timer_remaining', state.timer_remaining)
           .eq('event_id', state.event_id)
@@ -219,22 +261,33 @@ async function timerLoop(): Promise<void> {
           continue
         }
 
-        // Timer is now calculated client-side, no need to broadcast TIMER_TICK every second
-        // This reduces server load and eliminates the eventId serialization issue
-        // io.to(gameRoom(state.event_id)).emit('TIMER_TICK', tickPayload)
+        io.to(gameRoom(state.event_id)).emit('TIMER_TICK', {
+          eventId: state.event_id,
+          remaining: newRemaining,
+          expiresAt: USE_TIMER_V2 ? state.round_expires_at : null,
+          serverTimeMs: nowMs,
+        })
 
         // If timer expired, auto-end the round
         if (newRemaining === 0) {
+          const { data: endedRows, error: endError } = await supabase
+            .from('game_state')
+            .update({ status: 'ROUND_END', timer_remaining: 0, last_updated: new Date(nowMs).toISOString() })
+            .eq('status', 'ROUND_ACTIVE')
+            .eq('event_id', state.event_id)
+            .select('event_id')
+
+          if (endError || !endedRows || endedRows.length === 0) {
+            console.error(`[timer] failed to persist ROUND_END for event ${state.event_id}:`, endError?.message ?? 'no rows updated')
+            continue
+          }
+
           console.log(`[timer] round expired for event ${state.event_id}, emitting ROUND_END`)
           io.to(gameRoom(state.event_id)).emit('ROUND_END', {
             eventId: state.event_id,
             auto: true,
+            serverTimeMs: nowMs,
           })
-          await supabase
-            .from('game_state')
-            .update({ status: 'ROUND_END' })
-            .eq('status', 'ROUND_ACTIVE')
-            .eq('event_id', state.event_id)
         }
       }
     }

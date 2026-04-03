@@ -23,9 +23,12 @@ export default function TimerDisplay({
   totalRounds,
   activeEventId,
 }: Props) {
-  const roundStartTime = useGameStore((store) => store.roundStartTime);
-  const roundDurationSeconds = useGameStore(
-    (store) => store.roundDurationSeconds,
+  const timerExpiresAtMs = useGameStore((store) => store.timerExpiresAtMs);
+  const timerLastSyncClientMs = useGameStore(
+    (store) => store.timerLastSyncClientMs,
+  );
+  const timerRemainingAtSyncSec = useGameStore(
+    (store) => store.timerRemainingAtSyncSec,
   );
   const persistedTimerRemaining = useGameStore(
     (store) => store.gameState?.timerRemaining ?? 0,
@@ -45,16 +48,31 @@ export default function TimerDisplay({
   const displayTime = useMemo(() => {
     if (status === "PAUSED") return persistedTimerRemaining;
     if (status !== "ROUND_ACTIVE") return 0;
-    if (!roundStartTime || roundDurationSeconds === 0) {
+
+    if (!timerExpiresAtMs || !timerLastSyncClientMs) {
       return persistedTimerRemaining;
     }
-    const remainingMs = roundStartTime + roundDurationSeconds * 1000 - nowMs;
-    return Math.max(0, remainingMs / 1000);
+
+    const elapsedSinceSyncSec = (nowMs - timerLastSyncClientMs) / 1000;
+    const interpolatedRemaining = Math.max(
+      0,
+      timerRemainingAtSyncSec - elapsedSinceSyncSec,
+    );
+    const expiresBasedRemaining = Math.max(0, (timerExpiresAtMs - nowMs) / 1000);
+    const localRemaining = Math.min(interpolatedRemaining, expiresBasedRemaining);
+
+    // If server-synced remaining exists, trust the lower value to avoid stale seconds.
+    if (persistedTimerRemaining > 0) {
+      return Math.min(localRemaining, persistedTimerRemaining);
+    }
+
+    return localRemaining;
   }, [
     status,
     persistedTimerRemaining,
-    roundStartTime,
-    roundDurationSeconds,
+    timerExpiresAtMs,
+    timerLastSyncClientMs,
+    timerRemainingAtSyncSec,
     nowMs,
   ]);
 

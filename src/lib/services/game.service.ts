@@ -32,6 +32,7 @@ interface GameStateRow {
   current_round: number;
   status: EventStatus;
   timer_remaining: number;
+  round_expires_at: string | null;
   paused_at: string | null;
   last_updated: string;
 }
@@ -115,6 +116,8 @@ export async function getGameState(eventId: string): Promise<GameState | null> {
     currentRound: row.current_round,
     timerRemaining: row.timer_remaining,
     totalRounds,
+    roundExpiresAt: row.round_expires_at,
+    serverTimeMs: Date.now(),
   };
 }
 
@@ -143,6 +146,8 @@ export async function initGameState(
     status: "IDLE",
     current_round: 0,
     timer_remaining: 0,
+    round_started_at: null,
+    round_expires_at: null,
     last_updated: new Date().toISOString(),
   });
 
@@ -301,6 +306,8 @@ export async function resetGame(eventId: string): Result {
       status: "READY",
       current_round: 0,
       timer_remaining: 0,
+      round_started_at: null,
+      round_expires_at: null,
       paused_at: null,
       last_updated: now,
     })
