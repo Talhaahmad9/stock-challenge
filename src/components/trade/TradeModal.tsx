@@ -39,6 +39,7 @@ export default function TradeModal({
 
   const qty = parseInt(quantity, 10);
   const estimatedTotal = qty > 0 ? price * qty : 0;
+  const isSell = type === "SELL";
 
   async function handleConfirm() {
     if (!qty || qty <= 0) {
@@ -68,20 +69,20 @@ export default function TradeModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center px-4">
-      <div className="bg-[#0a0a0a] border border-green-500/20 rounded-md p-6 w-full max-w-sm space-y-5">
+      <div className={`bg-[#0a0a0a] border ${isSell ? "border-red-500/20" : "border-green-500/20"} rounded-md p-6 w-full max-w-sm space-y-5`}>
         <div>
-          <p className="text-xs text-green-700 tracking-widest uppercase mb-1">
+          <p className={`text-xs ${isSell ? "text-red-700" : "text-green-700"} tracking-widest uppercase mb-1`}>
             {type}
           </p>
-          <p className="text-xl font-bold text-green-400 tracking-widest">
+          <p className={`text-xl font-bold ${isSell ? "text-red-400" : "text-green-400"} tracking-widest`}>
             {symbol}
           </p>
-          <p className="text-sm text-green-700 tabular-nums mt-1">
+          <p className={`text-sm ${isSell ? "text-red-700" : "text-green-700"} tabular-nums mt-1`}>
             Price: {fmt(price)}
           </p>
         </div>
         <div className="space-y-2">
-          <label className="text-xs uppercase tracking-widest text-green-700">
+          <label className={`text-xs uppercase tracking-widest ${isSell ? "text-red-700" : "text-green-700"}`}>
             Quantity
           </label>
           <input
@@ -91,12 +92,12 @@ export default function TradeModal({
             onChange={(e) => setQuantity(e.target.value)}
             placeholder="0"
             autoFocus
-            className="w-full bg-black border border-green-500/30 text-green-300 placeholder-green-900 rounded px-4 py-3 text-sm focus:border-green-400 focus:outline-none tabular-nums"
+            className={`w-full bg-black border ${isSell ? "border-red-500/30 text-red-300 placeholder-red-900 focus:border-red-400" : "border-green-500/30 text-green-300 placeholder-green-900 focus:border-green-400"} rounded px-4 py-3 text-sm focus:outline-none tabular-nums`}
           />
           {estimatedTotal > 0 && (
-            <p className="text-xs text-green-700 tabular-nums">
+            <p className={`text-xs ${isSell ? "text-red-700" : "text-green-700"} tabular-nums`}>
               Estimated {type === "BUY" ? "cost" : "proceeds"}:{" "}
-              <span className="text-green-400">{fmt(estimatedTotal)}</span>
+              <span className={isSell ? "text-red-400" : "text-green-400"}>{fmt(estimatedTotal)}</span>
             </p>
           )}
         </div>
@@ -112,7 +113,7 @@ export default function TradeModal({
           <button
             onClick={handleConfirm}
             disabled={loading}
-            className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold py-3 rounded text-xs uppercase tracking-widest"
+            className={`flex-1 ${isSell ? "bg-red-500 hover:bg-red-400" : "bg-green-500 hover:bg-green-400"} disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold py-3 rounded text-xs uppercase tracking-widest`}
           >
             {loading ? (
               <>
@@ -126,7 +127,7 @@ export default function TradeModal({
           <button
             onClick={onClose}
             disabled={loading}
-            className="flex-1 border border-green-500/30 text-green-700 hover:text-green-400 hover:border-green-500 py-3 rounded text-xs uppercase tracking-widest"
+            className={`flex-1 border ${isSell ? "border-red-500/30 text-red-700 hover:text-red-400 hover:border-red-500" : "border-green-500/30 text-green-700 hover:text-green-400 hover:border-green-500"} py-3 rounded text-xs uppercase tracking-widest`}
           >
             CANCEL
           </button>
